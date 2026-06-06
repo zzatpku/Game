@@ -33,8 +33,8 @@ python3 -m http.server 5173
 
 ## 音频素材
 
-- `assets/mallard-quack.mp3` 来自 Wikimedia Commons: `Anas platyrhynchos - Mallard - XC62258.ogg` 的 MP3 转码版本。
+- `assets/mallard-quack.m4a` 是从 Wikimedia Commons: `Anas platyrhynchos - Mallard - XC62258.ogg` 中剪出的鸭叫片段。
 - 录音者：Jonathon Jongsma。
 - 许可证：Creative Commons Attribution-Share Alike 3.0 Unported。
-- 使用方式：本 demo 使用其 MP3 转码，并在游戏中播放其中一段作为鸭子鸣叫。
+- 使用方式：本 demo 使用剪辑后的本地 M4A 片段作为鸭子鸣叫。
 - 原始页面：https://commons.wikimedia.org/wiki/File:Anas_platyrhynchos_-_Mallard_-_XC62258.ogg

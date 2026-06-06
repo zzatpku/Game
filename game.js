@@ -169,7 +169,7 @@
     const master = ctx.createGain();
     master.gain.value = 0.18;
     master.connect(ctx.destination);
-    const quack = new Audio("assets/mallard-quack.mp3");
+    const quack = new Audio("assets/mallard-quack.m4a");
     quack.preload = "auto";
     quack.volume = 0.62;
     audio = { ctx, master, swimReadyAt: 0, quack, quackFallback: false };
