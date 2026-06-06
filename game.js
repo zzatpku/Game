@@ -6,6 +6,8 @@
     clarityBar: document.querySelector("#clarityBar"),
     awarenessValue: document.querySelector("#awarenessValue"),
     awarenessBar: document.querySelector("#awarenessBar"),
+    staminaValue: document.querySelector("#staminaValue"),
+    staminaBar: document.querySelector("#staminaBar"),
     scorePill: document.querySelector("#scorePill"),
     actionText: document.querySelector("#actionText"),
     nearestText: document.querySelector("#nearestText"),
@@ -29,12 +31,15 @@
 
   let state;
   let last = performance.now();
+  let audio;
 
   function reset() {
     state = {
       time: 0,
       clarity: 82,
       awareness: 12,
+      combo: 0,
+      comboTimer: 0,
       score: 0,
       targetScore: 12,
       result: "playing",
@@ -48,14 +53,17 @@
         dir: -0.5,
         carrying: null,
         sign: false,
+        stamina: 100,
+        sprinting: false,
         bob: 0
       },
       ripples: [],
+      soundWaves: [],
       floatTexts: [],
       thrown: [],
       trash: [
         makeTrash(486, 330, 0),
-        makeTrash(710, 470, 1),
+        makeTrash(710, 470, 1, true),
         makeTrash(835, 320, 2)
       ],
       visitors: [
@@ -85,7 +93,7 @@
     };
   }
 
-  function makeTrash(x, y, typeIndex) {
+  function makeTrash(x, y, typeIndex, urgent = false) {
     const type = trashTypes[typeIndex % trashTypes.length];
     return {
       id: Math.floor(100 + Math.random() * 900),
@@ -94,6 +102,7 @@
       vx: (Math.random() - 0.5) * 8,
       vy: (Math.random() - 0.5) * 8,
       type,
+      urgent,
       age: 0,
       spin: Math.random() * Math.PI * 2,
       picked: false
@@ -136,8 +145,71 @@
     state.ripples.push({ x, y, r: 8, a: 1, color });
   }
 
+  function addSoundWave(x, y, radius, color = "rgba(255,255,255,0.78)") {
+    state.soundWaves.push({ x, y, r: 12, max: radius, a: 1, color });
+  }
+
   function addText(text, x, y, color = "#173638") {
     state.floatTexts.push({ text, x, y, y0: y, a: 1, color });
+  }
+
+  function ensureAudio() {
+    if (audio) return audio;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    const ctx = new AudioContext();
+    const master = ctx.createGain();
+    master.gain.value = 0.18;
+    master.connect(ctx.destination);
+    audio = { ctx, master, swimReadyAt: 0 };
+    return audio;
+  }
+
+  function resumeAudio() {
+    const setup = ensureAudio();
+    if (setup && setup.ctx.state === "suspended") {
+      setup.ctx.resume();
+    }
+  }
+
+  function playTone(freq, duration, type = "sine", gainValue = 0.18, bend = 1) {
+    const setup = ensureAudio();
+    if (!setup) return;
+    const { ctx, master } = setup;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(30, freq * bend), ctx.currentTime + duration);
+    gain.gain.setValueAtTime(gainValue, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start();
+    osc.stop(ctx.currentTime + duration + 0.02);
+  }
+
+  function playQuack() {
+    resumeAudio();
+    playTone(430, 0.12, "square", 0.11, 0.74);
+    setTimeout(() => playTone(520, 0.1, "sawtooth", 0.07, 0.62), 70);
+  }
+
+  function playSplash(strong = false) {
+    const setup = audio;
+    if (!setup || setup.ctx.currentTime < setup.swimReadyAt) return;
+    setup.swimReadyAt = setup.ctx.currentTime + (strong ? 0.11 : 0.23);
+    playTone(strong ? 165 : 120, strong ? 0.08 : 0.06, "triangle", strong ? 0.09 : 0.045, 0.52);
+  }
+
+  function playPickup() {
+    resumeAudio();
+    playTone(720, 0.08, "triangle", 0.08, 1.38);
+  }
+
+  function playDrop() {
+    resumeAudio();
+    playTone(260, 0.11, "sine", 0.09, 1.75);
   }
 
   function nearestTrash() {
@@ -168,6 +240,7 @@
   }
 
   function performAction() {
+    resumeAudio();
     if (state.result !== "playing") {
       reset();
       return;
@@ -176,11 +249,15 @@
 
     if (duck.carrying && dist(duck, recycle) < 74) {
       const cleaned = duck.carrying;
+      const comboBonus = state.comboTimer > 0 ? Math.min(3, state.combo) : 0;
       duck.carrying = null;
       state.score += 1;
-      state.clarity = Math.min(100, state.clarity + 4.2);
-      addText(`回收 ${cleaned.type.name}`, recycle.x, recycle.y - 46, "#2d8064");
+      state.combo = Math.min(9, state.combo + 1);
+      state.comboTimer = 7;
+      state.clarity = Math.min(100, state.clarity + (cleaned.urgent ? 8.2 : 4.2) + comboBonus * 0.9);
+      addText(`回收 ${cleaned.type.name}${comboBonus ? ` x${state.combo}` : ""}`, recycle.x, recycle.y - 46, "#2d8064");
       addRipple(recycle.x, recycle.y, "rgba(86,150,88,0.42)");
+      playDrop();
       if (state.score === 4 && !duck.sign) {
         duck.sign = true;
         addText("学生递来了小告示牌", duck.x, duck.y - 54, "#b45c12");
@@ -193,25 +270,36 @@
       if (target && target.d < 50) {
         duck.carrying = target.item;
         state.trash = state.trash.filter((item) => item !== target.item);
-        addText(`叼起 ${target.item.type.name}`, duck.x, duck.y - 42, "#315f96");
+        addText(`叼起 ${target.item.urgent ? "污染热点" : target.item.type.name}`, duck.x, duck.y - 42, target.item.urgent ? "#b33327" : "#315f96");
         addRipple(target.item.x, target.item.y);
+        playPickup();
         return;
       }
     }
 
-    const nearVisitor = nearestVisitor();
-    if (nearVisitor && nearVisitor.d < (duck.sign ? 86 : 60)) {
-      const v = nearVisitor.visitor;
-      v.cooldown = Math.max(v.cooldown, duck.sign ? 13 : 8);
-      v.shame = 2.2;
-      v.throwWindup = 0;
-      state.awareness = Math.min(100, state.awareness + (duck.sign ? 9 : 5));
-      addText(duck.sign ? "请勿投喂与乱丢" : "嘎!", v.x, v.y - 48, "#b33327");
-      addRipple(v.x, v.y, "rgba(210,77,63,0.35)");
+    playQuack();
+    const radius = duck.sign ? 122 : 82;
+    let warnedCount = 0;
+    for (const v of state.visitors) {
+      if (dist(duck, v) <= radius) {
+        v.cooldown = Math.max(v.cooldown, duck.sign ? 15 : 8);
+        v.shame = 2.2;
+        v.throwWindup = 0;
+        v.timer += duck.sign ? 1.4 : 0.6;
+        warnedCount += 1;
+        addText(duck.sign ? "请勿投喂与乱丢" : "嘎!", v.x, v.y - 48, "#b33327");
+      }
+    }
+    if (warnedCount > 0) {
+      state.awareness = Math.min(100, state.awareness + warnedCount * (duck.sign ? 6 : 3));
+      addSoundWave(duck.x, duck.y, radius, "rgba(210,77,63,0.42)");
+      addRipple(duck.x, duck.y, "rgba(210,77,63,0.35)");
+      addText(`提醒 ${warnedCount} 人`, duck.x, duck.y - 40, "#b33327");
       return;
     }
 
     addRipple(duck.x, duck.y);
+    addSoundWave(duck.x, duck.y, radius, "rgba(49,95,150,0.38)");
     addText("嘎", duck.x, duck.y - 34, "#315f96");
   }
 
@@ -222,7 +310,10 @@
     }
 
     state.time += dt;
-    state.clarity -= state.trash.length * dt * 0.22;
+    const urgentCount = state.trash.filter((item) => item.urgent).length;
+    state.comboTimer = Math.max(0, state.comboTimer - dt);
+    if (state.comboTimer <= 0) state.combo = 0;
+    state.clarity -= (state.trash.length * 0.2 + urgentCount * 0.33) * dt;
     state.clarity = Math.max(0, Math.min(100, state.clarity));
     if (state.clarity <= 6) {
       state.result = "lost";
@@ -249,6 +340,8 @@
     if (keys.has("ArrowRight") || keys.has("d")) mx += 1;
     if (keys.has("ArrowUp") || keys.has("w")) my -= 1;
     if (keys.has("ArrowDown") || keys.has("s")) my += 1;
+    const keyboardMoving = mx !== 0 || my !== 0;
+    if (keyboardMoving) pointer.active = false;
 
     if (pointer.active) {
       const dx = pointer.x - duck.x;
@@ -268,7 +361,15 @@
       duck.dir = Math.atan2(my, mx);
     }
 
-    const speed = isWater(duck.x, duck.y) ? 185 : 105;
+    const wantsSprint = (keys.has("Shift") || keys.has("shift")) && m > 0 && duck.stamina > 2;
+    duck.sprinting = wantsSprint;
+    if (wantsSprint) {
+      duck.stamina = Math.max(0, duck.stamina - dt * 34);
+    } else {
+      duck.stamina = Math.min(100, duck.stamina + dt * (isWater(duck.x, duck.y) ? 18 : 25));
+    }
+    const baseSpeed = isWater(duck.x, duck.y) ? 185 : 105;
+    const speed = baseSpeed * (duck.sprinting ? 1.55 : 1);
     duck.vx += (mx * speed - duck.vx) * Math.min(1, dt * 9);
     duck.vy += (my * speed - duck.vy) * Math.min(1, dt * 9);
     duck.x += duck.vx * dt;
@@ -285,6 +386,7 @@
 
     if (isWater(duck.x, duck.y) && Math.hypot(duck.vx, duck.vy) > 35 && state.time % 0.28 < dt) {
       addRipple(duck.x - Math.cos(duck.dir) * 24, duck.y - Math.sin(duck.dir) * 18);
+      playSplash(duck.sprinting);
     }
   }
 
@@ -308,6 +410,7 @@
       if (visitor.timer <= 0) {
         const target = visitor.nextTarget || randomWaterTarget();
         const typeIndex = Math.floor(Math.random() * trashTypes.length);
+        const urgent = Math.random() < 0.28;
         state.thrown.push({
           x: visitor.x,
           y: visitor.y - 16,
@@ -316,7 +419,8 @@
           tx: target.x,
           ty: target.y,
           t: 0,
-          typeIndex
+          typeIndex,
+          urgent
         });
         visitor.timer = 6 + Math.random() * 7 + state.awareness * 0.035;
         visitor.nextTarget = null;
@@ -333,7 +437,7 @@
       item.x = item.sx + (item.tx - item.sx) * t;
       item.y = item.sy + (item.ty - item.sy) * t - arc;
       if (t >= 1) {
-        state.trash.push(makeTrash(item.tx, item.ty, item.typeIndex));
+        state.trash.push(makeTrash(item.tx, item.ty, item.typeIndex, item.urgent));
         addRipple(item.tx, item.ty, "rgba(210,77,63,0.38)");
         state.cameraShake = 0.16;
       }
@@ -369,6 +473,12 @@
     }
     state.ripples = state.ripples.filter((ripple) => ripple.a > 0);
 
+    for (const wave of state.soundWaves) {
+      wave.r += dt * 190;
+      wave.a = Math.max(0, 1 - wave.r / wave.max);
+    }
+    state.soundWaves = state.soundWaves.filter((wave) => wave.a > 0 && wave.r < wave.max);
+
     for (const text of state.floatTexts) {
       text.y -= dt * 28;
       text.a -= dt * 0.78;
@@ -379,11 +489,14 @@
   function updateUi() {
     const clarity = Math.round(state.clarity);
     const awareness = Math.round(state.awareness);
+    const stamina = Math.round(state.duck.stamina);
     ui.clarityValue.textContent = `${clarity}%`;
     ui.awarenessValue.textContent = `${awareness}%`;
+    ui.staminaValue.textContent = `${stamina}%`;
     ui.clarityBar.style.width = `${clarity}%`;
     ui.awarenessBar.style.width = `${awareness}%`;
-    ui.scorePill.textContent = `清理 ${state.score} / ${state.targetScore}`;
+    ui.staminaBar.style.width = `${stamina}%`;
+    ui.scorePill.textContent = state.combo > 1 ? `清理 ${state.score} / ${state.targetScore}  x${state.combo}` : `清理 ${state.score} / ${state.targetScore}`;
 
     if (state.result === "won") {
       ui.actionText.textContent = "湖面已守住";
@@ -406,21 +519,25 @@
     let action = "巡湖中";
     if (duck.carrying && dist(duck, recycle) < 74) action = "投放到回收点";
     else if (duck.carrying) action = `叼着${duck.carrying.type.name}`;
-    else if (nearTrash && nearTrash.d < 50) action = `拾取${nearTrash.item.type.name}`;
+    else if (nearTrash && nearTrash.d < 50) action = `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
     else if (nearVisitor && nearVisitor.d < (duck.sign ? 86 : 60)) action = duck.sign ? "举牌提醒游客" : "鸣叫提醒游客";
     ui.actionText.textContent = action;
     ui.actionButton.textContent = action === "巡湖中" ? "鸣叫" : "行动";
 
     if (nearTrash) {
-      ui.nearestText.textContent = `${regionName(nearTrash.item)}  X${Math.round(nearTrash.item.x)} Y${Math.round(nearTrash.item.y)}`;
+      ui.nearestText.textContent = `${nearTrash.item.urgent ? "污染热点 " : ""}${regionName(nearTrash.item)}  X${Math.round(nearTrash.item.x)} Y${Math.round(nearTrash.item.y)}`;
     } else {
       ui.nearestText.textContent = "未发现";
     }
 
     if (!duck.sign && state.score >= 4) {
       ui.missionText.textContent = "告示牌已解锁";
+    } else if (state.combo > 1) {
+      ui.missionText.textContent = `连击中: ${state.combo} 次`;
     } else if (duck.carrying) {
       ui.missionText.textContent = "送到左上岸边回收点";
+    } else if (state.trash.some((item) => item.urgent)) {
+      ui.missionText.textContent = "优先处理红色污染热点";
     } else if (state.trash.length > 0) {
       ui.missionText.textContent = "定位并清理漂浮垃圾";
     } else {
@@ -445,6 +562,7 @@
     }
     drawWorld();
     drawRipples();
+    drawSoundWaves();
     drawVisitors();
     drawThrown();
     drawTrash();
@@ -628,9 +746,9 @@
     ctx.fill();
     for (const item of state.trash) {
       const p = miniPos(item, w, h);
-      ctx.fillStyle = "#d24d3f";
+      ctx.fillStyle = item.urgent ? "#b33327" : "#d24d3f";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, item.urgent ? 4.5 : 3, 0, Math.PI * 2);
       ctx.fill();
     }
     const d = miniPos(state.duck, w, h);
@@ -658,6 +776,20 @@
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(ripple.x, ripple.y, ripple.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  function drawSoundWaves() {
+    for (const wave of state.soundWaves) {
+      ctx.strokeStyle = wave.color.replace(/[\d.]+\)$/u, `${Math.max(0, wave.a * 0.8)})`);
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(wave.x, wave.y, wave.r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(wave.x, wave.y, Math.max(4, wave.r - 18), 0, Math.PI * 2);
       ctx.stroke();
     }
   }
@@ -714,7 +846,7 @@
 
   function drawThrown() {
     for (const item of state.thrown) {
-      drawTrashShape(item.x, item.y, trashTypes[item.typeIndex], item.t * Math.PI * 4);
+      drawTrashShape(item.x, item.y, trashTypes[item.typeIndex], item.t * Math.PI * 4, item.urgent);
     }
   }
 
@@ -723,7 +855,7 @@
     for (const item of state.trash) {
       const isNearest = nearest && nearest.item === item;
       if (isNearest) {
-        ctx.strokeStyle = "rgba(210,77,63,0.9)";
+        ctx.strokeStyle = item.urgent ? "rgba(179,51,39,0.95)" : "rgba(210,77,63,0.9)";
         ctx.lineWidth = 3;
         ctx.setLineDash([6, 7]);
         ctx.beginPath();
@@ -731,15 +863,21 @@
         ctx.stroke();
         ctx.setLineDash([]);
       }
-      drawTrashShape(item.x, item.y, item.type, item.spin);
-      ctx.fillStyle = isNearest ? "#b33327" : "rgba(22,48,46,0.62)";
+      if (item.urgent) {
+        ctx.fillStyle = "rgba(179,51,39,0.17)";
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, 36 + Math.sin(state.time * 6) * 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      drawTrashShape(item.x, item.y, item.type, item.spin, item.urgent);
+      ctx.fillStyle = item.urgent || isNearest ? "#b33327" : "rgba(22,48,46,0.62)";
       ctx.font = "800 12px system-ui";
       ctx.textAlign = "center";
-      ctx.fillText(`X${Math.round(item.x)} Y${Math.round(item.y)}`, item.x, item.y - 24);
+      ctx.fillText(`${item.urgent ? "热点 " : ""}X${Math.round(item.x)} Y${Math.round(item.y)}`, item.x, item.y - 24);
     }
   }
 
-  function drawTrashShape(x, y, type, spin) {
+  function drawTrashShape(x, y, type, spin, urgent = false) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(spin * 0.25);
@@ -750,7 +888,8 @@
     ctx.fillStyle = type.color;
     roundRect(-type.w / 2, -type.h / 2, type.w, type.h, 4);
     ctx.fill();
-    ctx.strokeStyle = "rgba(22,48,46,0.28)";
+    ctx.strokeStyle = urgent ? "#b33327" : "rgba(22,48,46,0.28)";
+    ctx.lineWidth = urgent ? 3 : 1;
     ctx.stroke();
     ctx.restore();
   }
@@ -788,6 +927,19 @@
     ctx.ellipse(-12, 2, 17, 10, -0.35, 0, Math.PI * 2);
     ctx.fill();
 
+    if (duck.sprinting) {
+      ctx.strokeStyle = "rgba(255,255,255,0.78)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-40, -10);
+      ctx.lineTo(-68, -18);
+      ctx.moveTo(-43, 2);
+      ctx.lineTo(-78, 5);
+      ctx.moveTo(-37, 13);
+      ctx.lineTo(-62, 24);
+      ctx.stroke();
+    }
+
     if (duck.sign) {
       ctx.save();
       ctx.rotate(-duck.dir);
@@ -806,7 +958,7 @@
     ctx.restore();
 
     if (duck.carrying) {
-      drawTrashShape(duck.carrying.x, duck.carrying.y, duck.carrying.type, state.time * 6);
+      drawTrashShape(duck.carrying.x, duck.carrying.y, duck.carrying.type, state.time * 6, duck.carrying.urgent);
     }
   }
 
@@ -879,8 +1031,11 @@
 
   window.addEventListener("keydown", (event) => {
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Spacebar", "w", "a", "s", "d"].includes(key)) {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Spacebar", "Shift", "w", "a", "s", "d"].includes(key)) {
       event.preventDefault();
+    }
+    if (["w", "a", "s", "d", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Shift"].includes(key)) {
+      resumeAudio();
     }
     if (key === " " || key === "Spacebar") performAction();
     else keys.add(key);
@@ -892,6 +1047,7 @@
   });
 
   canvas.addEventListener("pointerdown", (event) => {
+    resumeAudio();
     const p = toCanvasPoint(event);
     pointer.active = true;
     pointer.x = p.x;
