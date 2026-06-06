@@ -19,6 +19,7 @@ python3 -m http.server 5173
 - 行动/鸣叫：`Space` 或右侧“行动”按钮。
 - 靠近垃圾时行动会叼起垃圾；叼着垃圾靠近左上角回收点时行动会投放。
 - 鸣叫会产生声波，范围内的游客会被提醒。清理 4 件垃圾后会解锁“护湖”告示牌，提醒范围和效果更强。
+- 清理 10 件垃圾后会暂停并选择一次升级：一次携带 2 件、体力上限提高，或增强鸣叫范围。
 
 ## 演示重点
 
@@ -26,5 +27,14 @@ python3 -m http.server 5173
 - 最近垃圾会在湖面高亮，并显示坐标位置。
 - 红色垃圾是污染热点，污染更快，但优先清理可以获得更高的清澈度回复。
 - 连续快速把垃圾送到回收点会触发连击奖励。
-- 游泳、冲刺和鸣叫都有浏览器合成音效，不需要额外音频文件。
+- Demo 当前目标是清理 14 件垃圾；清理到 10 件时会获得一次升级，帮助完成最后阶段。
+- 鸣叫使用本地真实鸭叫素材，游泳和回收仍使用浏览器合成音效。
 - 垃圾越多，湖水清澈度下降越快；清理垃圾和提醒游客会改变 HUD 指标，形成可展示的玩法闭环。
+
+## 音频素材
+
+- `assets/mallard-quack.mp3` 来自 Wikimedia Commons: `Anas platyrhynchos - Mallard - XC62258.ogg` 的 MP3 转码版本。
+- 录音者：Jonathon Jongsma。
+- 许可证：Creative Commons Attribution-Share Alike 3.0 Unported。
+- 使用方式：本 demo 使用其 MP3 转码，并在游戏中播放其中一段作为鸭子鸣叫。
+- 原始页面：https://commons.wikimedia.org/wiki/File:Anas_platyrhynchos_-_Mallard_-_XC62258.ogg

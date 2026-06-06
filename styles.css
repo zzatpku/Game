@@ -208,6 +208,72 @@ canvas {
   font-weight: 750;
 }
 
+.upgrade-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(16, 34, 34, 0.48);
+}
+
+.upgrade-modal[hidden] {
+  display: none;
+}
+
+.upgrade-box {
+  width: min(720px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(22, 48, 46, 0.14);
+  border-radius: 8px;
+  background: #fffffb;
+  box-shadow: var(--shadow);
+}
+
+.upgrade-box h2 {
+  margin: 0 0 18px;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.upgrade-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.upgrade-options button {
+  display: grid;
+  gap: 8px;
+  min-height: 138px;
+  padding: 14px;
+  border: 1px solid rgba(22, 48, 46, 0.14);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #eef5e9;
+  text-align: left;
+  cursor: pointer;
+}
+
+.upgrade-options button:hover,
+.upgrade-options button:focus-visible {
+  outline: 3px solid rgba(227, 167, 47, 0.32);
+  background: #f7f1d8;
+}
+
+.upgrade-options strong {
+  font-size: 18px;
+}
+
+.upgrade-options span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
 @media (max-width: 980px) {
   .topbar,
   .gameframe {
@@ -234,6 +300,10 @@ canvas {
 
   .sidepanel button {
     grid-column: span 1;
+  }
+
+  .upgrade-options {
+    grid-template-columns: 1fr;
   }
 }
 

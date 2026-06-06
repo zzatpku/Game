@@ -17,7 +17,7 @@
         <div class="meters">
           <div class="meter">
             <span>湖水清澈度</span>
-            <strong id="clarityValue">82%</strong>
+            <strong id="clarityValue">95%</strong>
             <div class="track"><i id="clarityBar"></i></div>
           </div>
           <div class="meter">
@@ -30,7 +30,7 @@
             <strong id="staminaValue">100%</strong>
             <div class="track track-gold"><i id="staminaBar"></i></div>
           </div>
-          <div class="pill" id="scorePill">清理 0 / 12</div>
+          <div class="pill" id="scorePill">清理 0 / 14</div>
         </div>
       </section>
 
@@ -61,6 +61,27 @@
         <span>目标: 优先清理红色污染热点并提醒游客</span>
       </section>
     </main>
+
+    <section class="upgrade-modal" id="upgradeModal" aria-label="upgrade choice" hidden>
+      <div class="upgrade-box">
+        <p class="eyebrow">Upgrade unlocked</p>
+        <h2>清理 10 件垃圾，选择一次升级</h2>
+        <div class="upgrade-options">
+          <button type="button" data-upgrade="capacity">
+            <strong>双重叼取</strong>
+            <span>一次最多携带 2 件垃圾，回收路线更有效率。</span>
+          </button>
+          <button type="button" data-upgrade="stamina">
+            <strong>耐力鸭</strong>
+            <span>体力上限提高到 150，冲刺消耗降低。</span>
+          </button>
+          <button type="button" data-upgrade="voice">
+            <strong>响亮鸣叫</strong>
+            <span>鸣叫范围扩大，游客冷静时间更长。</span>
+          </button>
+        </div>
+      </div>
+    </section>
 
     <script src="game.js"></script>
   </body>

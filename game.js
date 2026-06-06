@@ -13,7 +13,8 @@
     nearestText: document.querySelector("#nearestText"),
     missionText: document.querySelector("#missionText"),
     actionButton: document.querySelector("#actionButton"),
-    restartButton: document.querySelector("#restartButton")
+    restartButton: document.querySelector("#restartButton"),
+    upgradeModal: document.querySelector("#upgradeModal")
   };
 
   const W = 1280;
@@ -36,13 +37,15 @@
   function reset() {
     state = {
       time: 0,
-      clarity: 82,
+      clarity: 95,
       awareness: 12,
       combo: 0,
       comboTimer: 0,
       score: 0,
-      targetScore: 12,
+      targetScore: 14,
       result: "playing",
+      upgradeOffered: false,
+      upgrade: null,
       cameraShake: 0,
       actionHint: "巡湖中",
       duck: {
@@ -51,9 +54,13 @@
         vx: 0,
         vy: 0,
         dir: -0.5,
-        carrying: null,
+        carrying: [],
+        carryCapacity: 1,
         sign: false,
         stamina: 100,
+        maxStamina: 100,
+        sprintDrain: 34,
+        quackBoost: 0,
         sprinting: false,
         bob: 0
       },
@@ -67,13 +74,14 @@
         makeTrash(835, 320, 2)
       ],
       visitors: [
-        makeVisitor(322, 139, "学生游客", 4.5),
-        makeVisitor(552, 112, "小朋友", 7.2),
-        makeVisitor(935, 162, "摄影游客", 5.8),
-        makeVisitor(1072, 385, "路过游客", 9.4),
-        makeVisitor(258, 546, "散步游客", 8.1)
+        makeVisitor(322, 139, "学生游客", 10.5),
+        makeVisitor(552, 112, "小朋友", 13.2),
+        makeVisitor(935, 162, "摄影游客", 12.8),
+        makeVisitor(1072, 385, "路过游客", 16.4),
+        makeVisitor(258, 546, "散步游客", 14.1)
       ]
     };
+    ui.upgradeModal.hidden = true;
     updateUi();
   }
 
@@ -161,7 +169,10 @@
     const master = ctx.createGain();
     master.gain.value = 0.18;
     master.connect(ctx.destination);
-    audio = { ctx, master, swimReadyAt: 0 };
+    const quack = new Audio("assets/mallard-quack.mp3");
+    quack.preload = "auto";
+    quack.volume = 0.62;
+    audio = { ctx, master, swimReadyAt: 0, quack, quackFallback: false };
     return audio;
   }
 
@@ -190,9 +201,31 @@
   }
 
   function playQuack() {
-    resumeAudio();
-    playTone(430, 0.12, "square", 0.11, 0.74);
-    setTimeout(() => playTone(520, 0.1, "sawtooth", 0.07, 0.62), 70);
+    const setup = ensureAudio();
+    if (!setup || setup.quackFallback) {
+      playTone(380, 0.1, "triangle", 0.08, 0.74);
+      return;
+    }
+    let playResult;
+    try {
+      setup.quack.pause();
+      setup.quack.currentTime = 0.65;
+      playResult = setup.quack.play();
+    } catch {
+      setup.quackFallback = true;
+      playTone(380, 0.1, "triangle", 0.08, 0.74);
+      return;
+    }
+    if (playResult) {
+      playResult.catch(() => {
+        setup.quackFallback = true;
+        playTone(380, 0.1, "triangle", 0.08, 0.74);
+      });
+    }
+    setTimeout(() => {
+      setup.quack.pause();
+      setup.quack.currentTime = 0;
+    }, 1100);
   }
 
   function playSplash(strong = false) {
@@ -239,36 +272,60 @@
     return { visitor: best, d: bestD };
   }
 
+  function carryingCount() {
+    return state.duck.carrying.length;
+  }
+
+  function carryingFull() {
+    return carryingCount() >= state.duck.carryCapacity;
+  }
+
+  function carriedLabel(items) {
+    if (items.length === 0) return "";
+    if (items.length === 1) return items[0].urgent ? "污染热点" : items[0].type.name;
+    return `${items.length} 件垃圾`;
+  }
+
+  function maybeOfferUpgrade() {
+    if (state.score < 10 || state.upgradeOffered) return;
+    state.upgradeOffered = true;
+    state.result = "upgrade";
+    ui.upgradeModal.hidden = false;
+    updateUi();
+  }
+
   function performAction() {
     resumeAudio();
     if (state.result !== "playing") {
-      reset();
+      if (state.result !== "upgrade") reset();
       return;
     }
     const duck = state.duck;
 
-    if (duck.carrying && dist(duck, recycle) < 74) {
-      const cleaned = duck.carrying;
-      const comboBonus = state.comboTimer > 0 ? Math.min(3, state.combo) : 0;
-      duck.carrying = null;
-      state.score += 1;
+    if (carryingCount() > 0 && dist(duck, recycle) < 74) {
+      const cleanedItems = [...duck.carrying];
+      const urgentCleaned = cleanedItems.filter((item) => item.urgent).length;
+      const comboBonus = state.comboTimer > 0 ? Math.min(4, state.combo) : 0;
+      duck.carrying = [];
+      state.score += cleanedItems.length;
       state.combo = Math.min(9, state.combo + 1);
-      state.comboTimer = 7;
-      state.clarity = Math.min(100, state.clarity + (cleaned.urgent ? 8.2 : 4.2) + comboBonus * 0.9);
-      addText(`回收 ${cleaned.type.name}${comboBonus ? ` x${state.combo}` : ""}`, recycle.x, recycle.y - 46, "#2d8064");
+      state.comboTimer = 8;
+      state.clarity = Math.min(100, state.clarity + cleanedItems.length * 5.5 + urgentCleaned * 4.5 + comboBonus * 1.1);
+      addText(`回收 ${carriedLabel(cleanedItems)}${comboBonus ? ` x${state.combo}` : ""}`, recycle.x, recycle.y - 46, "#2d8064");
       addRipple(recycle.x, recycle.y, "rgba(86,150,88,0.42)");
       playDrop();
-      if (state.score === 4 && !duck.sign) {
+      if (state.score >= 4 && !duck.sign) {
         duck.sign = true;
         addText("学生递来了小告示牌", duck.x, duck.y - 54, "#b45c12");
       }
+      maybeOfferUpgrade();
       return;
     }
 
-    if (!duck.carrying) {
+    if (!carryingFull()) {
       const target = nearestTrash();
       if (target && target.d < 50) {
-        duck.carrying = target.item;
+        duck.carrying.push(target.item);
         state.trash = state.trash.filter((item) => item !== target.item);
         addText(`叼起 ${target.item.urgent ? "污染热点" : target.item.type.name}`, duck.x, duck.y - 42, target.item.urgent ? "#b33327" : "#315f96");
         addRipple(target.item.x, target.item.y);
@@ -278,20 +335,21 @@
     }
 
     playQuack();
-    const radius = duck.sign ? 122 : 82;
+    const radius = (duck.sign ? 152 : 110) + duck.quackBoost;
     let warnedCount = 0;
     for (const v of state.visitors) {
       if (dist(duck, v) <= radius) {
-        v.cooldown = Math.max(v.cooldown, duck.sign ? 15 : 8);
+        v.cooldown = Math.max(v.cooldown, (duck.sign ? 40 : 28) + duck.quackBoost * 0.1);
         v.shame = 2.2;
         v.throwWindup = 0;
-        v.timer += duck.sign ? 1.4 : 0.6;
+        v.nextTarget = null;
+        v.timer += (duck.sign ? 12 : 8) + duck.quackBoost * 0.08;
         warnedCount += 1;
         addText(duck.sign ? "请勿投喂与乱丢" : "嘎!", v.x, v.y - 48, "#b33327");
       }
     }
     if (warnedCount > 0) {
-      state.awareness = Math.min(100, state.awareness + warnedCount * (duck.sign ? 6 : 3));
+      state.awareness = Math.min(100, state.awareness + warnedCount * (duck.sign ? 8 : 4));
       addSoundWave(duck.x, duck.y, radius, "rgba(210,77,63,0.42)");
       addRipple(duck.x, duck.y, "rgba(210,77,63,0.35)");
       addText(`提醒 ${warnedCount} 人`, duck.x, duck.y - 40, "#b33327");
@@ -313,13 +371,13 @@
     const urgentCount = state.trash.filter((item) => item.urgent).length;
     state.comboTimer = Math.max(0, state.comboTimer - dt);
     if (state.comboTimer <= 0) state.combo = 0;
-    state.clarity -= (state.trash.length * 0.2 + urgentCount * 0.33) * dt;
+    state.clarity -= (state.trash.length * 0.07 + urgentCount * 0.12) * dt;
     state.clarity = Math.max(0, Math.min(100, state.clarity));
     if (state.clarity <= 6) {
       state.result = "lost";
       addText("湖面失守", W / 2, H / 2 - 42, "#b33327");
     }
-    if (state.score >= state.targetScore && state.clarity >= 55) {
+    if (state.score >= state.targetScore && state.clarity >= 35) {
       state.result = "won";
       addText("未名湖恢复清澈", W / 2, H / 2 - 42, "#2d8064");
     }
@@ -364,9 +422,9 @@
     const wantsSprint = (keys.has("Shift") || keys.has("shift")) && m > 0 && duck.stamina > 2;
     duck.sprinting = wantsSprint;
     if (wantsSprint) {
-      duck.stamina = Math.max(0, duck.stamina - dt * 34);
+      duck.stamina = Math.max(0, duck.stamina - dt * duck.sprintDrain);
     } else {
-      duck.stamina = Math.min(100, duck.stamina + dt * (isWater(duck.x, duck.y) ? 18 : 25));
+      duck.stamina = Math.min(duck.maxStamina, duck.stamina + dt * (isWater(duck.x, duck.y) ? 20 : 28));
     }
     const baseSpeed = isWater(duck.x, duck.y) ? 185 : 105;
     const speed = baseSpeed * (duck.sprinting ? 1.55 : 1);
@@ -379,10 +437,11 @@
     duck.y = Math.max(62, Math.min(H - 36, duck.y));
     duck.bob += dt * (m > 0 ? 10 : 4);
 
-    if (duck.carrying) {
-      duck.carrying.x = duck.x + Math.cos(duck.dir) * 31;
-      duck.carrying.y = duck.y + Math.sin(duck.dir) * 31;
-    }
+    duck.carrying.forEach((item, index) => {
+      const side = index === 0 ? -1 : 1;
+      item.x = duck.x + Math.cos(duck.dir) * 31 - Math.sin(duck.dir) * side * 14;
+      item.y = duck.y + Math.sin(duck.dir) * 31 + Math.cos(duck.dir) * side * 14;
+    });
 
     if (isWater(duck.x, duck.y) && Math.hypot(duck.vx, duck.vy) > 35 && state.time % 0.28 < dt) {
       addRipple(duck.x - Math.cos(duck.dir) * 24, duck.y - Math.sin(duck.dir) * 18);
@@ -410,7 +469,7 @@
       if (visitor.timer <= 0) {
         const target = visitor.nextTarget || randomWaterTarget();
         const typeIndex = Math.floor(Math.random() * trashTypes.length);
-        const urgent = Math.random() < 0.28;
+        const urgent = Math.random() < 0.12;
         state.thrown.push({
           x: visitor.x,
           y: visitor.y - 16,
@@ -422,7 +481,7 @@
           typeIndex,
           urgent
         });
-        visitor.timer = 6 + Math.random() * 7 + state.awareness * 0.035;
+        visitor.timer = 14 + Math.random() * 10 + state.awareness * 0.18 + (state.upgrade === "voice" ? 7 : 0);
         visitor.nextTarget = null;
         visitor.throwWindup = 0;
       }
@@ -490,12 +549,13 @@
     const clarity = Math.round(state.clarity);
     const awareness = Math.round(state.awareness);
     const stamina = Math.round(state.duck.stamina);
+    const staminaPct = Math.round(state.duck.stamina / state.duck.maxStamina * 100);
     ui.clarityValue.textContent = `${clarity}%`;
     ui.awarenessValue.textContent = `${awareness}%`;
-    ui.staminaValue.textContent = `${stamina}%`;
+    ui.staminaValue.textContent = `${stamina}/${state.duck.maxStamina}`;
     ui.clarityBar.style.width = `${clarity}%`;
     ui.awarenessBar.style.width = `${awareness}%`;
-    ui.staminaBar.style.width = `${stamina}%`;
+    ui.staminaBar.style.width = `${staminaPct}%`;
     ui.scorePill.textContent = state.combo > 1 ? `清理 ${state.score} / ${state.targetScore}  x${state.combo}` : `清理 ${state.score} / ${state.targetScore}`;
 
     if (state.result === "won") {
@@ -512,13 +572,20 @@
       ui.actionButton.textContent = "重新开始";
       return;
     }
+    if (state.result === "upgrade") {
+      ui.actionText.textContent = "选择升级";
+      ui.missionText.textContent = "清理 10 件后的奖励";
+      ui.nearestText.textContent = "升级后继续";
+      ui.actionButton.textContent = "等待选择";
+      return;
+    }
 
     const duck = state.duck;
     const nearTrash = nearestTrash();
     const nearVisitor = nearestVisitor();
     let action = "巡湖中";
-    if (duck.carrying && dist(duck, recycle) < 74) action = "投放到回收点";
-    else if (duck.carrying) action = `叼着${duck.carrying.type.name}`;
+    if (carryingCount() > 0 && dist(duck, recycle) < 74) action = "投放到回收点";
+    else if (carryingCount() > 0) action = `叼着${carriedLabel(duck.carrying)} (${carryingCount()}/${duck.carryCapacity})`;
     else if (nearTrash && nearTrash.d < 50) action = `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
     else if (nearVisitor && nearVisitor.d < (duck.sign ? 86 : 60)) action = duck.sign ? "举牌提醒游客" : "鸣叫提醒游客";
     ui.actionText.textContent = action;
@@ -534,10 +601,14 @@
       ui.missionText.textContent = "告示牌已解锁";
     } else if (state.combo > 1) {
       ui.missionText.textContent = `连击中: ${state.combo} 次`;
-    } else if (duck.carrying) {
+    } else if (carryingCount() > 0 && !carryingFull()) {
+      ui.missionText.textContent = "还可以再叼 1 件";
+    } else if (carryingCount() > 0) {
       ui.missionText.textContent = "送到左上岸边回收点";
     } else if (state.trash.some((item) => item.urgent)) {
       ui.missionText.textContent = "优先处理红色污染热点";
+    } else if (!state.upgradeOffered && state.score >= 8) {
+      ui.missionText.textContent = `再清理 ${10 - state.score} 件解锁升级`;
     } else if (state.trash.length > 0) {
       ui.missionText.textContent = "定位并清理漂浮垃圾";
     } else {
@@ -957,8 +1028,8 @@
     }
     ctx.restore();
 
-    if (duck.carrying) {
-      drawTrashShape(duck.carrying.x, duck.carrying.y, duck.carrying.type, state.time * 6, duck.carrying.urgent);
+    for (const item of duck.carrying) {
+      drawTrashShape(item.x, item.y, item.type, state.time * 6, item.urgent);
     }
   }
 
@@ -974,7 +1045,7 @@
   }
 
   function drawOverlay() {
-    if (state.result === "playing") return;
+    if (state.result === "playing" || state.result === "upgrade") return;
     ctx.save();
     ctx.fillStyle = "rgba(16, 34, 34, 0.42)";
     ctx.fillRect(0, 0, W, H);
@@ -990,6 +1061,27 @@
     ctx.fillText(`清理 ${state.score} 件垃圾  游客意识 ${Math.round(state.awareness)}%`, W / 2, H / 2 + 12);
     ctx.fillText("按 Space 或点击行动按钮重开", W / 2, H / 2 + 48);
     ctx.restore();
+  }
+
+  function chooseUpgrade(type) {
+    if (state.result !== "upgrade") return;
+    const duck = state.duck;
+    state.upgrade = type;
+    if (type === "capacity") {
+      duck.carryCapacity = 2;
+      addText("升级: 一次携带 2 件", duck.x, duck.y - 58, "#2d8064");
+    } else if (type === "stamina") {
+      duck.maxStamina = 150;
+      duck.stamina = 150;
+      duck.sprintDrain = 23;
+      addText("升级: 体力 150", duck.x, duck.y - 58, "#b45c12");
+    } else if (type === "voice") {
+      duck.quackBoost = 45;
+      addText("升级: 鸣叫更远", duck.x, duck.y - 58, "#315f96");
+    }
+    ui.upgradeModal.hidden = true;
+    state.result = "playing";
+    updateUi();
   }
 
   function mix(a, b, t) {
@@ -1063,6 +1155,11 @@
 
   ui.actionButton.addEventListener("click", performAction);
   ui.restartButton.addEventListener("click", reset);
+  ui.upgradeModal.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-upgrade]");
+    if (!button) return;
+    chooseUpgrade(button.dataset.upgrade);
+  });
 
   function loop(now) {
     const dt = Math.min(0.033, (now - last) / 1000 || 0);
