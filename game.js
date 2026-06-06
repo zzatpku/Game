@@ -222,10 +222,6 @@
         playTone(380, 0.1, "triangle", 0.08, 0.74);
       });
     }
-    setTimeout(() => {
-      setup.quack.pause();
-      setup.quack.currentTime = 0;
-    }, 1100);
   }
 
   function playSplash(strong = false) {
