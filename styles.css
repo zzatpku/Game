@@ -142,6 +142,11 @@ h1 {
   align-items: stretch;
 }
 
+.viewport-wrap {
+  position: relative;
+  min-width: 0;
+}
+
 canvas {
   display: block;
   width: 100%;
@@ -150,7 +155,62 @@ canvas {
   border-radius: 8px;
   background: var(--water);
   box-shadow: var(--shadow);
-  cursor: crosshair;
+  cursor: grab;
+}
+
+canvas:active {
+  cursor: grabbing;
+}
+
+.radar {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 152px;
+  padding: 9px 10px 10px;
+  border: 1px solid rgba(22, 48, 46, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 251, 0.78);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 18px rgba(23, 54, 56, 0.1);
+  pointer-events: none;
+}
+
+.radar span {
+  display: block;
+  margin-bottom: 6px;
+  color: #52635f;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.radar-map {
+  position: relative;
+  height: 74px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: rgba(79, 163, 182, 0.42);
+}
+
+.radar-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: #d24d3f;
+}
+
+.radar-dot.duck {
+  width: 9px;
+  height: 9px;
+  background: #173638;
+}
+
+.radar-dot.urgent {
+  width: 9px;
+  height: 9px;
+  background: #b33327;
 }
 
 .sidepanel {
@@ -324,5 +384,16 @@ canvas {
 
   canvas {
     aspect-ratio: 4 / 3;
+  }
+
+  .radar {
+    top: 10px;
+    right: 10px;
+    width: 110px;
+    padding: 6px;
+  }
+
+  .radar-map {
+    height: 54px;
   }
 }
