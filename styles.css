@@ -328,15 +328,31 @@ canvas:active {
 }
 
 .bottom-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.1fr) minmax(280px, 1.4fr) minmax(320px, 1.6fr) minmax(180px, 0.8fr);
+  gap: 10px;
   margin-top: 12px;
   padding: 11px 14px;
   border-radius: 8px;
   color: #4e625e;
   font-size: 13px;
   font-weight: 750;
+}
+
+.caption-group {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.caption-group strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.caption-group span {
+  line-height: 1.45;
 }
 
 .upgrade-modal {
@@ -436,6 +452,15 @@ canvas:active {
   .upgrade-options {
     grid-template-columns: 1fr;
   }
+
+  .bottom-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .caption-group:first-child,
+  .caption-group:nth-child(3) {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 640px) {
@@ -445,8 +470,14 @@ canvas:active {
   }
 
   .meters,
-  .sidepanel {
+  .sidepanel,
+  .bottom-strip {
     grid-template-columns: 1fr;
+  }
+
+  .caption-group:first-child,
+  .caption-group:nth-child(3) {
+    grid-column: auto;
   }
 
   .sidepanel {
