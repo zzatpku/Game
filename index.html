@@ -21,24 +21,6 @@
           <p class="eyebrow">Playable concept demo</p>
           <h1>未名湖守护鸭</h1>
         </div>
-        <div class="meters">
-          <div class="meter">
-            <span>湖水清澈度</span>
-            <strong id="clarityValue">95%</strong>
-            <div class="track"><i id="clarityBar"></i></div>
-          </div>
-          <div class="meter">
-            <span>游客意识</span>
-            <strong id="awarenessValue">12%</strong>
-            <div class="track"><i id="awarenessBar"></i></div>
-          </div>
-          <div class="meter">
-            <span>冲刺体力</span>
-            <strong id="staminaValue">100%</strong>
-            <div class="track track-gold"><i id="staminaBar"></i></div>
-          </div>
-          <div class="pill" id="scorePill">第 1 / 5 轮  0 / 8</div>
-        </div>
       </section>
 
       <section class="gameframe" aria-label="game canvas">
@@ -62,40 +44,60 @@
             </div>
           </div>
         </div>
-        <div class="sidepanel">
-          <div>
-            <p class="panel-label">当前行动</p>
-            <p class="panel-main" id="actionText">巡湖中</p>
+        <aside class="right-rail" aria-label="game status and actions">
+          <div class="meters">
+            <div class="meter">
+              <span>湖水清澈度</span>
+              <strong id="clarityValue">95%</strong>
+              <div class="track"><i id="clarityBar"></i></div>
+            </div>
+            <div class="meter">
+              <span>游客意识</span>
+              <strong id="awarenessValue">12%</strong>
+              <div class="track"><i id="awarenessBar"></i></div>
+            </div>
+            <div class="meter">
+              <span>冲刺体力</span>
+              <strong id="staminaValue">100%</strong>
+              <div class="track track-gold"><i id="staminaBar"></i></div>
+            </div>
+            <div class="pill" id="scorePill">第 1 / 5 轮  0 / 8</div>
           </div>
-          <div>
-            <p class="panel-label">最近垃圾位置</p>
-            <p class="panel-main" id="nearestText">未发现</p>
+          <div class="sidepanel">
+            <div>
+              <p class="panel-label">当前行动</p>
+              <p class="panel-main" id="actionText">巡湖中</p>
+            </div>
+            <div>
+              <p class="panel-label">最近垃圾位置</p>
+              <p class="panel-main" id="nearestText">未发现</p>
+            </div>
+            <div>
+              <p class="panel-label">任务进度</p>
+              <p class="panel-main" id="missionText">守住未名湖</p>
+            </div>
+            <button id="actionButton" type="button">行动</button>
+            <button id="restartButton" type="button">重新开始</button>
           </div>
-          <div>
-            <p class="panel-label">任务进度</p>
-            <p class="panel-main" id="missionText">守住未名湖</p>
-          </div>
-          <button id="actionButton" type="button">行动</button>
-          <button id="restartButton" type="button">重新开始</button>
-        </div>
+        </aside>
       </section>
 
       <section class="bottom-strip" aria-label="game instructions">
         <div class="caption-group">
           <strong>目标</strong>
-          <span>按 Space 捡起湖里的垃圾，叼到湖边垃圾桶旁，再按 Space 扔进垃圾桶；湖岸一圈几乎均匀分布着 6 个垃圾桶。</span>
+          <span>Space 捡垃圾；到湖岸 6 个几乎均匀分布的垃圾桶旁再按 Space 投放。</span>
         </div>
         <div class="caption-group">
           <strong>操作</strong>
-          <span>W / A / S / D 控制前后左右；左 / 右方向键控制视角方向；点击屏幕内任意位置后，可用鼠标拖动操控视角方向。</span>
+          <span>WASD 移动；左 / 右方向键或点击画面后拖鼠标转视角。</span>
         </div>
         <div class="caption-group">
           <strong>规则</strong>
-          <span>每捡到 8 个垃圾并成功扔进垃圾桶会获得一次奖励；每次奖励之后，游客扔垃圾速度会增加；完成 5 次循环后进入游戏第二阶段；湖水干净程度低于或等于 6% 时游戏失败。</span>
+          <span>每投放 8 件得奖励，之后游客扔垃圾加快；完成 5 轮进入第二阶段；清澈度低于或等于 6% 失败。</span>
         </div>
         <div class="caption-group caption-compact">
           <strong>其他</strong>
-          <span>Shift 冲刺；Esc 打开暂停菜单。</span>
+          <span>Shift 冲刺；Esc 暂停。</span>
         </div>
       </section>
     </main>
