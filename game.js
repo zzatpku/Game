@@ -15,6 +15,13 @@ const ui = {
   actionButton: document.querySelector("#actionButton"),
   restartButton: document.querySelector("#restartButton"),
   upgradeModal: document.querySelector("#upgradeModal"),
+  upgradeTitle: document.querySelector("#upgradeTitle"),
+  pauseMenu: document.querySelector("#pauseMenu"),
+  resumeButton: document.querySelector("#resumeButton"),
+  pauseRoundText: document.querySelector("#pauseRoundText"),
+  pauseRoundProgressText: document.querySelector("#pauseRoundProgressText"),
+  pauseTotalText: document.querySelector("#pauseTotalText"),
+  pausePressureText: document.querySelector("#pausePressureText"),
   radarMap: document.querySelector("#radarMap")
 };
 
@@ -27,6 +34,9 @@ const islandLiftY = 0.38;
 const bridgeDeckTopY = 0.66;
 const duckWaterEyeY = 0.34;
 const duckLandEyeLift = 0.04;
+const totalRounds = 5;
+const roundTrashTarget = 8;
+const totalTrashTarget = totalRounds * roundTrashTarget;
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
 const bridgeCenterZ = (islandCenter.z - lake.rz * 1.02) / 2;
@@ -123,10 +133,18 @@ function reset() {
     combo: 0,
     comboTimer: 0,
     score: 0,
-    targetScore: 8,
+    targetScore: totalTrashTarget,
+    round: 1,
+    roundTarget: roundTrashTarget,
     result: "playing",
-    upgradeOffered: false,
+    paused: false,
+    pendingRound: null,
     upgrade: null,
+    upgradeLevels: {
+      capacity: 0,
+      stamina: 0,
+      voice: 0
+    },
     cameraShake: 0,
     duck: {
       x: oldToWorld(625, 386).x,
@@ -164,6 +182,7 @@ function reset() {
   const firstTarget = state.trash.find((item) => item.urgent) || state.trash[0];
   yaw = yawTo(firstTarget);
   ui.upgradeModal.hidden = true;
+  ui.pauseMenu.hidden = true;
   syncScene(true);
   updateUi();
 }
@@ -894,23 +913,78 @@ function addShoreLandmarks() {
   const tower = new THREE.Group();
   tower.position.set(lake.rx * 0.96, terrainHeightAt(lake.rx * 0.96, lake.rz * 0.7), lake.rz * 0.7);
   tower.rotation.y = -0.18;
-  const brick = new THREE.MeshStandardMaterial({ color: 0xb66b4e, roughness: 0.76 });
-  const roof = new THREE.MeshStandardMaterial({ color: 0x596562, roughness: 0.82 });
-  for (let i = 0; i < 7; i += 1) {
-    const tier = new THREE.Mesh(new THREE.BoxGeometry(1.28 - i * 0.075, 0.92, 1.28 - i * 0.075), brick);
-    tier.position.y = 0.46 + i * 0.88;
-    tier.castShadow = true;
-    tower.add(tier);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.9 - i * 0.045, 0.28, 4), roof);
-    cap.position.y = 0.98 + i * 0.88;
-    cap.rotation.y = Math.PI / 4;
-    cap.castShadow = true;
-    tower.add(cap);
+  const brick = new THREE.MeshStandardMaterial({ color: 0xb36a4c, roughness: 0.78 });
+  const darkBrick = new THREE.MeshStandardMaterial({ color: 0x8f4f3f, roughness: 0.82 });
+  const eaveMaterial = new THREE.MeshStandardMaterial({ color: 0x5d6661, roughness: 0.84 });
+  const stoneBase = new THREE.MeshStandardMaterial({ color: 0xc5ad8a, roughness: 0.88 });
+
+  const plinthShapes = [
+    [1.25, 1.36, 0.24],
+    [1.08, 1.18, 0.18],
+    [0.94, 1.02, 0.2]
+  ];
+  let y = 0;
+  for (const [top, bottom, height] of plinthShapes) {
+    const baseTier = new THREE.Mesh(new THREE.CylinderGeometry(top, bottom, height, 8), stoneBase);
+    baseTier.position.y = y + height / 2;
+    baseTier.castShadow = true;
+    baseTier.receiveShadow = true;
+    tower.add(baseTier);
+    y += height;
   }
-  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.26, 1.35, 8), roof);
-  spire.position.y = 6.98;
+
+  for (let i = 0; i < 13; i += 1) {
+    const radius = 0.82 - i * 0.026;
+    const storyHeight = i < 2 ? 0.42 : 0.36;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.96, radius, storyHeight, 8), brick);
+    body.position.y = y + storyHeight / 2;
+    body.castShadow = true;
+    tower.add(body);
+
+    if (i < 9) {
+      for (const a of [0, Math.PI / 2]) {
+        const slit = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.12, 0.2),
+          new THREE.MeshBasicMaterial({ color: 0x392e2a, transparent: true, opacity: 0.58 })
+        );
+        slit.position.set(Math.sin(a) * (radius + 0.006), y + storyHeight * 0.52, Math.cos(a) * (radius + 0.006));
+        slit.rotation.y = a;
+        tower.add(slit);
+      }
+    }
+
+    y += storyHeight;
+    const eave = new THREE.Mesh(new THREE.CylinderGeometry(radius * 1.22, radius * 1.12, 0.1, 8), eaveMaterial);
+    eave.position.y = y + 0.05;
+    eave.castShadow = true;
+    tower.add(eave);
+
+    const brickBand = new THREE.Mesh(new THREE.CylinderGeometry(radius * 1.03, radius * 1.03, 0.035, 8), darkBrick);
+    brickBand.position.y = y + 0.12;
+    tower.add(brickBand);
+    y += 0.16;
+  }
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.38, 8), brick);
+  neck.position.y = y + 0.19;
+  neck.castShadow = true;
+  tower.add(neck);
+  y += 0.38;
+
+  const finialBase = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, 0.14, 8), eaveMaterial);
+  finialBase.position.y = y + 0.07;
+  finialBase.castShadow = true;
+  tower.add(finialBase);
+  y += 0.14;
+
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.08, 12), eaveMaterial);
+  spire.position.y = y + 0.54;
   spire.castShadow = true;
   tower.add(spire);
+  const finial = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), eaveMaterial);
+  finial.position.y = y + 1.14;
+  finial.castShadow = true;
+  tower.add(finial);
   world.add(tower);
 
   const pavilion = new THREE.Group();
@@ -1305,6 +1379,15 @@ function nearestRecyclePoint(point = state.duck) {
   return { spot: best, d: bestD };
 }
 
+function visitorThrowDelay() {
+  const round = state?.round || 1;
+  const base = 15.5 - (round - 1) * 2.25;
+  const variance = Math.max(3.5, 9.5 - (round - 1) * 1.15);
+  const awarenessDelay = (state?.awareness || 0) * Math.max(0.07, 0.15 - (round - 1) * 0.018);
+  const voiceDelay = (state?.upgradeLevels?.voice || 0) * 2.2;
+  return Math.max(4.2, base + Math.random() * variance + awarenessDelay + voiceDelay);
+}
+
 function carryingCount() {
   return state.duck.carrying.length;
 }
@@ -1319,10 +1402,23 @@ function carriedLabel(items) {
   return `${items.length} 件垃圾`;
 }
 
-function maybeOfferUpgrade() {
-  if (state.score < 10 || state.upgradeOffered) return;
-  state.upgradeOffered = true;
+function currentRoundProgress() {
+  return Math.min(roundTrashTarget, Math.max(0, state.score - (state.round - 1) * roundTrashTarget));
+}
+
+function maybeAdvanceRound() {
+  if (state.result !== "playing") return;
+  if (state.score >= totalTrashTarget) {
+    openChannelAndWin();
+    return;
+  }
+  const roundCompleteScore = state.round * roundTrashTarget;
+  if (state.score < roundCompleteScore) return;
+  state.pendingRound = state.round + 1;
   state.result = "upgrade";
+  state.duck.vx = 0;
+  state.duck.vz = 0;
+  ui.upgradeTitle.textContent = `第 ${state.round} 轮完成，选择一次升级`;
   ui.upgradeModal.hidden = false;
   document.exitPointerLock?.();
   updateUi();
@@ -1330,6 +1426,7 @@ function maybeOfferUpgrade() {
 
 function performAction() {
   resumeAudio();
+  if (state.paused) return;
   if (state.result !== "playing") {
     if (state.result !== "upgrade") reset();
     return;
@@ -1353,7 +1450,7 @@ function performAction() {
       duck.sign = true;
       addText("学生递来了小告示牌", duck.x, duck.z, "#b45c12");
     }
-    maybeOfferUpgrade();
+    maybeAdvanceRound();
     return;
   }
 
@@ -1396,6 +1493,12 @@ function performAction() {
 }
 
 function update(dt) {
+  if (state.paused) {
+    syncScene();
+    updateCamera(dt);
+    updateUi();
+    return;
+  }
   if (state.result !== "playing") {
     updateParticles(dt);
     syncScene();
@@ -1412,8 +1515,8 @@ function update(dt) {
   if (state.clarity <= 6) {
     state.result = "lost";
     addText("湖面失守", state.duck.x, state.duck.z, "#b33327");
-  } else if (state.score >= state.targetScore) {
-    openChannelAndWin();
+  } else {
+    maybeAdvanceRound();
   }
 
   updateDuck(dt);
@@ -1437,6 +1540,7 @@ function openChannelAndWin() {
   }
   state.thrown = [];
   state.trash = [];
+  state.round = totalRounds;
   state.result = "won";
   state.clarity = Math.max(state.clarity, 72);
   addText("湖底水道打开", lake.rx * 0.72, -lake.rz * 0.98, "#2d8064");
@@ -1449,12 +1553,12 @@ function updateDuck(dt) {
   let forward = 0;
   let strafe = 0;
   let turn = 0;
-  if (keys.has("ArrowLeft") || keys.has("a")) turn -= 1;
-  if (keys.has("ArrowRight") || keys.has("d")) turn += 1;
+  if (keys.has("ArrowLeft")) turn -= 1;
+  if (keys.has("ArrowRight")) turn += 1;
   if (keys.has("ArrowUp") || keys.has("w")) forward += 1;
   if (keys.has("ArrowDown") || keys.has("s")) forward -= 0.62;
-  if (keys.has("q")) strafe -= 1;
-  if (keys.has("e")) strafe += 1;
+  if (keys.has("a") || keys.has("q")) strafe -= 1;
+  if (keys.has("d") || keys.has("e")) strafe += 1;
 
   yaw = wrapAngle(yaw - turn * dt * 2.45);
   const dirX = -Math.sin(yaw);
@@ -1542,7 +1646,7 @@ function updateVisitors(dt) {
         mesh: null
       });
       playVisitorThrow(urgent);
-      visitor.timer = 14 + Math.random() * 10 + state.awareness * 0.18 + (state.upgrade === "voice" ? 7 : 0);
+      visitor.timer = visitorThrowDelay();
       visitor.nextTarget = null;
       visitor.throwWindup = 0;
     }
@@ -1779,13 +1883,17 @@ function updateUi() {
   const awareness = Math.round(state.awareness);
   const stamina = Math.round(state.duck.stamina);
   const staminaPct = Math.round(state.duck.stamina / state.duck.maxStamina * 100);
+  const roundProgress = currentRoundProgress();
   ui.clarityValue.textContent = `${clarity}%`;
   ui.awarenessValue.textContent = `${awareness}%`;
   ui.staminaValue.textContent = `${stamina}/${state.duck.maxStamina}`;
   ui.clarityBar.style.width = `${clarity}%`;
   ui.awarenessBar.style.width = `${awareness}%`;
   ui.staminaBar.style.width = `${staminaPct}%`;
-  ui.scorePill.textContent = state.combo > 1 ? `清理 ${state.score} / ${state.targetScore}  x${state.combo}` : `清理 ${state.score} / ${state.targetScore}`;
+  ui.scorePill.textContent = state.combo > 1
+    ? `第 ${state.round} / ${totalRounds} 轮  ${roundProgress} / ${roundTrashTarget}  x${state.combo}`
+    : `第 ${state.round} / ${totalRounds} 轮  ${roundProgress} / ${roundTrashTarget}`;
+  updatePauseMenu();
 
   if (state.result === "won") {
     ui.actionText.textContent = "水道已打开";
@@ -1803,8 +1911,8 @@ function updateUi() {
   }
   if (state.result === "upgrade") {
     ui.actionText.textContent = "选择升级";
-    ui.missionText.textContent = "清理 10 件后的奖励";
-    ui.nearestText.textContent = "升级后继续";
+    ui.missionText.textContent = `第 ${state.round} 轮完成`;
+    ui.nearestText.textContent = `即将进入第 ${state.pendingRound} 轮`;
     ui.actionButton.textContent = "等待选择";
     return;
   }
@@ -1833,9 +1941,48 @@ function updateUi() {
   else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = "还可以再叼 1 件";
   else if (carryingCount() > 0) ui.missionText.textContent = "送到岸边绿色回收点";
   else if (state.trash.some((item) => item.urgent)) ui.missionText.textContent = "优先处理红色污染热点";
-  else if (state.score >= state.targetScore - 2) ui.missionText.textContent = `再清理 ${state.targetScore - state.score} 件打开水道`;
+  else if (roundProgress >= roundTrashTarget - 2) {
+    const left = roundTrashTarget - roundProgress;
+    ui.missionText.textContent = state.round === totalRounds ? `再清理 ${left} 件打开水道` : `再清理 ${left} 件完成本轮`;
+  }
   else if (state.trash.length > 0) ui.missionText.textContent = "定位并清理漂浮垃圾";
-  else ui.missionText.textContent = "盯住岸边游客";
+  else ui.missionText.textContent = `第 ${state.round} 轮: 盯住岸边游客`;
+}
+
+function updatePauseMenu() {
+  if (!ui.pauseMenu) return;
+  const roundProgress = currentRoundProgress();
+  ui.pauseRoundText.textContent = `第 ${state.round} / ${totalRounds} 轮`;
+  ui.pauseRoundProgressText.textContent = `${roundProgress} / ${roundTrashTarget}`;
+  ui.pauseTotalText.textContent = `${state.score} / ${totalTrashTarget}`;
+  ui.pausePressureText.textContent = `第 ${state.round} 档`;
+}
+
+function showPauseMenu() {
+  if (!state || state.result !== "playing") return;
+  state.paused = true;
+  keys.clear();
+  state.duck.vx = 0;
+  state.duck.vz = 0;
+  ui.pauseMenu.hidden = false;
+  updateUi();
+}
+
+function hidePauseMenu(lockPointer = false) {
+  if (!state) return;
+  state.paused = false;
+  ui.pauseMenu.hidden = true;
+  updateUi();
+  if (lockPointer) requestPointerLockSafely();
+}
+
+function requestPointerLockSafely() {
+  try {
+    const request = canvas.requestPointerLock?.();
+    request?.catch?.(() => {});
+  } catch {
+    // Pointer lock can be unavailable in automated or embedded contexts.
+  }
 }
 
 function regionName(item) {
@@ -1850,19 +1997,26 @@ function chooseUpgrade(type) {
   const duck = state.duck;
   state.upgrade = type;
   if (type === "capacity") {
-    duck.carryCapacity = 2;
-    addText("升级: 一次携带 2 件", duck.x, duck.z, "#2d8064");
+    state.upgradeLevels.capacity += 1;
+    duck.carryCapacity = Math.min(5, duck.carryCapacity + 1);
+    addText(`升级: 一次携带 ${duck.carryCapacity} 件`, duck.x, duck.z, "#2d8064");
   } else if (type === "stamina") {
-    duck.maxStamina = 150;
-    duck.stamina = 150;
-    duck.sprintDrain = 23;
-    addText("升级: 体力 150", duck.x, duck.z, "#b45c12");
+    state.upgradeLevels.stamina += 1;
+    duck.maxStamina += 35;
+    duck.stamina = duck.maxStamina;
+    duck.sprintDrain = Math.max(18, duck.sprintDrain - 4);
+    addText(`升级: 体力 ${duck.maxStamina}`, duck.x, duck.z, "#b45c12");
   } else if (type === "voice") {
-    duck.quackBoost = 45;
+    state.upgradeLevels.voice += 1;
+    duck.quackBoost += 24;
     addText("升级: 鸣叫更远", duck.x, duck.z, "#315f96");
   }
   ui.upgradeModal.hidden = true;
+  state.round = state.pendingRound || Math.min(totalRounds, state.round + 1);
+  state.pendingRound = null;
   state.result = "playing";
+  for (const visitor of state.visitors) visitor.timer = Math.min(visitor.timer, visitorThrowDelay() * 0.62);
+  addText(`第 ${state.round} 轮开始`, duck.x, duck.z, "#b33327");
   updateUi();
 }
 
@@ -2003,9 +2157,15 @@ function loop() {
 
 window.addEventListener("keydown", (event) => {
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Spacebar", "Shift", "w", "a", "s", "d", "q", "e"].includes(key)) {
+  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Spacebar", "Shift", "Escape", "w", "a", "s", "d", "q", "e"].includes(key)) {
     event.preventDefault();
   }
+  if (key === "Escape") {
+    showPauseMenu();
+    document.exitPointerLock?.();
+    return;
+  }
+  if (state?.paused) return;
   if (["w", "a", "s", "d", "q", "e", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Shift"].includes(key)) resumeAudio();
   if (key === " " || key === "Spacebar") performAction();
   else keys.add(key);
@@ -2018,24 +2178,26 @@ window.addEventListener("keyup", (event) => {
 
 canvas.addEventListener("click", () => {
   resumeAudio();
-  canvas.requestPointerLock?.();
+  if (state?.paused) return;
+  requestPointerLockSafely();
 });
 
 window.addEventListener("mousemove", (event) => {
-  if (document.pointerLockElement !== canvas) return;
+  if (state?.paused || document.pointerLockElement !== canvas) return;
   yaw = wrapAngle(yaw - event.movementX * 0.002);
   pitch = clamp(pitch - event.movementY * 0.002, -0.55, 0.35);
 });
 
 canvas.addEventListener("pointerdown", (event) => {
   resumeAudio();
+  if (state?.paused) return;
   pointer.dragging = true;
   pointer.x = event.clientX;
   pointer.y = event.clientY;
 });
 
 canvas.addEventListener("pointermove", (event) => {
-  if (!pointer.dragging || document.pointerLockElement === canvas) return;
+  if (state?.paused || !pointer.dragging || document.pointerLockElement === canvas) return;
   yaw = wrapAngle(yaw - (event.clientX - pointer.x) * 0.006);
   pitch = clamp(pitch - (event.clientY - pointer.y) * 0.006, -0.55, 0.35);
   pointer.x = event.clientX;
@@ -2048,6 +2210,10 @@ window.addEventListener("pointerup", () => {
 
 ui.actionButton.addEventListener("click", performAction);
 ui.restartButton.addEventListener("click", reset);
+ui.resumeButton.addEventListener("click", () => hidePauseMenu(false));
+document.addEventListener("pointerlockchange", () => {
+  if (document.pointerLockElement !== canvas && state?.result === "playing" && !state.paused) showPauseMenu();
+});
 ui.upgradeModal.addEventListener("click", (event) => {
   const button = event.target.closest("[data-upgrade]");
   if (!button) return;

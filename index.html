@@ -37,7 +37,7 @@
             <strong id="staminaValue">100%</strong>
             <div class="track track-gold"><i id="staminaBar"></i></div>
           </div>
-          <div class="pill" id="scorePill">清理 0 / 14</div>
+          <div class="pill" id="scorePill">第 1 / 5 轮  0 / 8</div>
         </div>
       </section>
 
@@ -47,6 +47,19 @@
           <div class="radar" aria-label="position radar">
             <span>位置雷达</span>
             <div class="radar-map" id="radarMap"></div>
+          </div>
+          <div class="pause-menu" id="pauseMenu" hidden>
+            <div class="pause-box">
+              <p class="eyebrow">Paused</p>
+              <h2>当前进度</h2>
+              <div class="pause-stats">
+                <p><span>轮次</span><strong id="pauseRoundText">第 1 / 5 轮</strong></p>
+                <p><span>本轮清理</span><strong id="pauseRoundProgressText">0 / 8</strong></p>
+                <p><span>总清理</span><strong id="pauseTotalText">0 / 40</strong></p>
+                <p><span>游客压力</span><strong id="pausePressureText">普通</strong></p>
+              </div>
+              <button id="resumeButton" type="button">继续游戏</button>
+            </div>
           </div>
         </div>
         <div class="sidepanel">
@@ -69,27 +82,27 @@
 
       <section class="bottom-strip" aria-label="controls">
         <span>前进/后退: W / S</span>
-        <span>转向: A / D 或鼠标拖拽</span>
-        <span>横移: Q / E</span>
+        <span>左右移动: A / D</span>
+        <span>鼠标控制方向</span>
         <span>冲刺: Shift</span>
-        <span>鼠标锁定: 点击画面</span>
+        <span>暂停菜单: Esc</span>
         <span>鸣叫/行动: Space</span>
-        <span>目标: 优先清理红色污染热点并提醒游客</span>
+        <span>目标: 完成 5 轮清理并打开水道</span>
       </section>
     </main>
 
     <section class="upgrade-modal" id="upgradeModal" aria-label="upgrade choice" hidden>
       <div class="upgrade-box">
         <p class="eyebrow">Upgrade unlocked</p>
-        <h2>清理 10 件垃圾，选择一次升级</h2>
+        <h2 id="upgradeTitle">本轮完成，选择一次升级</h2>
         <div class="upgrade-options">
           <button type="button" data-upgrade="capacity">
-            <strong>双重叼取</strong>
-            <span>一次最多携带 2 件垃圾，回收路线更有效率。</span>
+            <strong>叼取强化</strong>
+            <span>携带上限增加 1 件，回收路线更有效率。</span>
           </button>
           <button type="button" data-upgrade="stamina">
             <strong>耐力鸭</strong>
-            <span>体力上限提高到 150，冲刺消耗降低。</span>
+            <span>体力上限提高，冲刺消耗降低。</span>
           </button>
           <button type="button" data-upgrade="voice">
             <strong>响亮鸣叫</strong>
@@ -99,6 +112,6 @@
       </div>
     </section>
 
-    <script type="module" src="game.js?v=3"></script>
+    <script type="module" src="game.js?v=4"></script>
   </body>
 </html>
