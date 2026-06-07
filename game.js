@@ -19,8 +19,8 @@ const ui = {
 };
 
 const oldLake = { cx: 642, cy: 375, rx: 495, ry: 255 };
-const lake = { rx: 14.1, rz: 7.3 };
-const playableLakeMargin = 1.28;
+const lake = { rx: 31.5, rz: 16.3 };
+const playableLakeMargin = 1.22;
 const recycle = oldToWorld(174, 195);
 const keys = new Set();
 const pointer = { dragging: false, x: 0, y: 0 };
@@ -45,9 +45,9 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xbfe2e5);
-scene.fog = new THREE.Fog(0xbfe2e5, 20, 48);
+scene.fog = new THREE.Fog(0xbfe2e5, 38, 118);
 
-const camera = new THREE.PerspectiveCamera(68, 16 / 9, 0.08, 90);
+const camera = new THREE.PerspectiveCamera(68, 16 / 9, 0.08, 170);
 camera.rotation.order = "YXZ";
 scene.add(camera);
 
@@ -55,6 +55,10 @@ const sun = new THREE.DirectionalLight(0xffffff, 2.4);
 sun.position.set(-8, 16, 10);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -58;
+sun.shadow.camera.right = 58;
+sun.shadow.camera.top = 42;
+sun.shadow.camera.bottom = -42;
 scene.add(sun);
 scene.add(new THREE.HemisphereLight(0xdff5ff, 0x7d9a58, 1.7));
 
@@ -72,6 +76,7 @@ const refs = {
   floatTexts: new Set(),
   rings: new Set(),
   targetBeacon: null,
+  waterDetails: [],
   minimap: []
 };
 
@@ -255,8 +260,8 @@ function disposeObject(object) {
 
 function buildWorld() {
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(70, 48),
-    new THREE.MeshStandardMaterial({ color: 0xd2d89d, roughness: 0.95 })
+    new THREE.PlaneGeometry(172, 112),
+    new THREE.MeshStandardMaterial({ color: 0xcfdc9f, roughness: 0.95 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.08;
@@ -280,9 +285,10 @@ function buildWorld() {
   water.receiveShadow = true;
   refs.water = water;
   world.add(water);
+  addWaterDetails();
 
   const shore = new THREE.Mesh(
-    new THREE.TorusGeometry(1, 0.045, 8, 128),
+    new THREE.TorusGeometry(1, 0.034, 8, 160),
     new THREE.MeshStandardMaterial({ color: 0xead899, roughness: 0.8 })
   );
   shore.rotation.x = Math.PI / 2;
@@ -290,29 +296,74 @@ function buildWorld() {
   shore.position.y = 0.04;
   world.add(shore);
 
+  addDistantHills();
   addBridge();
   addTrees();
+  addShoreLandmarks();
   addIsland();
   addRecycle();
   addBoundaryFence();
 }
 
+function addWaterDetails() {
+  const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xdaf9ff, transparent: true, opacity: 0.16 });
+  for (let i = 0; i < 28; i += 1) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.006, 6, 96), lineMaterial.clone());
+    const a = i * 2.399;
+    const radius = 0.18 + (i % 9) * 0.085 + Math.random() * 0.035;
+    ring.position.set(Math.cos(a) * lake.rx * radius, 0.026 + i * 0.0002, Math.sin(a) * lake.rz * radius);
+    ring.rotation.x = Math.PI / 2;
+    ring.scale.set(1.3 + Math.random() * 2.7, 0.28 + Math.random() * 0.7, 1);
+    world.add(ring);
+    refs.waterDetails.push({ mesh: ring, phase: Math.random() * Math.PI * 2, speed: 0.45 + Math.random() * 0.35, baseY: ring.position.y, baseOpacity: ring.material.opacity });
+  }
+
+  const reflectionMaterial = new THREE.MeshBasicMaterial({ color: 0x243f40, transparent: true, opacity: 0.18, depthWrite: false });
+  for (let i = 0; i < 5; i += 1) {
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.22 + i * 0.09, 4.8 - i * 0.52), reflectionMaterial.clone());
+    strip.rotation.x = -Math.PI / 2;
+    strip.rotation.z = 0.04 * (i - 2);
+    strip.position.set(lake.rx * 0.72 + i * 0.28, 0.031 + i * 0.001, -lake.rz * 0.33 + i * 0.18);
+    world.add(strip);
+    refs.waterDetails.push({ mesh: strip, phase: i * 0.7, speed: 0.5, baseY: strip.position.y, baseOpacity: strip.material.opacity });
+  }
+}
+
+function addDistantHills() {
+  const hillMaterial = new THREE.MeshStandardMaterial({ color: 0xa9bf84, roughness: 0.92 });
+  const shadowMaterial = new THREE.MeshStandardMaterial({ color: 0x819d6f, roughness: 0.95 });
+  const hills = [
+    [-42, -35, 22, 5.2, 11, hillMaterial],
+    [-10, -38, 34, 6.4, 13, shadowMaterial],
+    [29, -34, 26, 5.8, 12, hillMaterial],
+    [48, 24, 28, 4.6, 10, shadowMaterial],
+    [-50, 25, 24, 4.8, 11, hillMaterial]
+  ];
+  for (const [x, z, sx, sy, sz, material] of hills) {
+    const hill = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), material);
+    hill.position.set(x, sy * 0.18 - 0.65, z);
+    hill.scale.set(sx, sy, sz);
+    hill.receiveShadow = true;
+    world.add(hill);
+  }
+}
+
 function addBridge() {
   const group = new THREE.Group();
-  group.position.set(9.8, 0.12, 4.1);
-  group.rotation.y = -0.2;
+  group.position.set(lake.rx * 0.63, 0.12, lake.rz * 0.48);
+  group.rotation.y = -0.24;
   const deck = new THREE.Mesh(
-    new THREE.BoxGeometry(4.4, 0.18, 0.56),
+    new THREE.BoxGeometry(8.2, 0.2, 0.72),
     new THREE.MeshStandardMaterial({ color: 0xb96d42, roughness: 0.7 })
   );
   deck.castShadow = true;
   group.add(deck);
-  for (let x = -1.9; x <= 1.9; x += 0.48) {
+  for (let x = -3.8; x <= 3.8; x += 0.62) {
     const post = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.7, 0.08),
+      new THREE.BoxGeometry(0.1, 0.78, 0.1),
       new THREE.MeshStandardMaterial({ color: 0x853f2d, roughness: 0.7 })
     );
-    post.position.set(x, 0.3, -0.22);
+    post.position.set(x, 0.34, -0.29);
     post.castShadow = true;
     group.add(post);
   }
@@ -320,35 +371,78 @@ function addBridge() {
 }
 
 function addTrees() {
-  const treePositions = [
-    [-15.7, -7.6], [-14.3, -7.5], [15.1, -5.1], [14.2, 2.0],
-    [-15.8, 5.4], [-8.6, 8.3], [2.2, -9.2], [11.2, -8.2],
-    [-6.2, -8.6], [13.5, 7.0], [-12.1, 6.6], [16.0, 0.4]
-  ];
-  for (const [x, z] of treePositions) {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.12, 0.16, 0.8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x9f5a38, roughness: 0.9 })
-    );
-    trunk.position.y = 0.38;
-    trunk.castShadow = true;
-    const crown = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.62 + Math.random() * 0.16, 1),
-      new THREE.MeshStandardMaterial({ color: 0x5f8f43, roughness: 0.85 })
-    );
-    crown.position.y = 1.0;
-    crown.castShadow = true;
-    group.add(trunk, crown);
-    world.add(group);
+  for (let i = 0; i < 72; i += 1) {
+    const a = i / 72 * Math.PI * 2;
+    const lane = i % 3;
+    const radius = playableLakeMargin + 0.1 + lane * 0.17 + Math.random() * 0.08;
+    const x = Math.cos(a) * lake.rx * radius;
+    const z = Math.sin(a) * lake.rz * radius;
+    const type = i % 5 === 0 ? "willow" : i % 4 === 0 ? "pine" : "broadleaf";
+    world.add(createTree(type, 0.9 + Math.random() * 0.55, x, z));
   }
+
+  for (let i = 0; i < 34; i += 1) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const x = side * (lake.rx * 1.75 + Math.random() * 18);
+    const z = (Math.random() * 2 - 1) * lake.rz * 1.75;
+    world.add(createTree(i % 3 === 0 ? "pine" : "broadleaf", 1.1 + Math.random() * 0.8, x, z));
+  }
+}
+
+function createTree(type, scale, x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  group.rotation.y = Math.random() * Math.PI * 2;
+  group.scale.setScalar(scale);
+
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.18, type === "willow" ? 1.35 : 1.0, 8),
+    new THREE.MeshStandardMaterial({ color: 0x8d5738, roughness: 0.9 })
+  );
+  trunk.position.y = type === "willow" ? 0.62 : 0.47;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  if (type === "pine") {
+    const material = new THREE.MeshStandardMaterial({ color: 0x315f42, roughness: 0.86 });
+    for (let i = 0; i < 3; i += 1) {
+      const tier = new THREE.Mesh(new THREE.ConeGeometry(0.5 - i * 0.08, 0.8, 9), material);
+      tier.position.y = 0.98 + i * 0.38;
+      tier.castShadow = true;
+      group.add(tier);
+    }
+    return group;
+  }
+
+  const crownColor = type === "willow" ? 0x7faa50 : 0x5f8f43;
+  const crown = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(type === "willow" ? 0.72 : 0.66, 1),
+    new THREE.MeshStandardMaterial({ color: crownColor, roughness: 0.86 })
+  );
+  crown.scale.set(type === "willow" ? 0.86 : 1.12, type === "willow" ? 1.3 : 0.96, type === "willow" ? 0.86 : 1.0);
+  crown.position.y = type === "willow" ? 1.42 : 1.05;
+  crown.castShadow = true;
+  group.add(crown);
+
+  if (type === "willow") {
+    const frondMaterial = new THREE.MeshStandardMaterial({ color: 0x8bbd5f, roughness: 0.9 });
+    for (let i = 0; i < 7; i += 1) {
+      const frond = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.72, 0.035), frondMaterial);
+      const a = i / 7 * Math.PI * 2;
+      frond.position.set(Math.cos(a) * 0.45, 0.92, Math.sin(a) * 0.45);
+      frond.rotation.z = Math.cos(a) * 0.28;
+      frond.rotation.x = Math.sin(a) * 0.28;
+      group.add(frond);
+    }
+  }
+
+  return group;
 }
 
 function addBoundaryFence() {
   const material = new THREE.MeshStandardMaterial({ color: 0x8a5a38, roughness: 0.72 });
-  const postGeometry = new THREE.BoxGeometry(0.16, 0.78, 0.16);
-  const railGeometry = new THREE.BoxGeometry(1.55, 0.13, 0.12);
+  const postGeometry = new THREE.BoxGeometry(0.18, 0.84, 0.18);
+  const railGeometry = new THREE.BoxGeometry(1, 0.12, 0.12);
   const group = new THREE.Group();
 
   const addPost = (x, z) => {
@@ -359,15 +453,17 @@ function addBoundaryFence() {
   };
   const addRail = (a, b) => {
     const rail = new THREE.Mesh(railGeometry, material);
+    const length = Math.hypot(a.x - b.x, a.z - b.z);
     rail.position.set((a.x + b.x) / 2, 0.62, (a.z + b.z) / 2);
+    rail.scale.x = length;
     rail.rotation.y = Math.atan2(b.x - a.x, b.z - a.z) + Math.PI / 2;
     rail.castShadow = true;
     group.add(rail);
   };
 
   const points = [];
-  for (let i = 0; i < 42; i += 1) {
-    const a = i / 42 * Math.PI * 2;
+  for (let i = 0; i < 84; i += 1) {
+    const a = i / 84 * Math.PI * 2;
     points.push({
       x: Math.cos(a) * lake.rx * playableLakeMargin,
       z: Math.sin(a) * lake.rz * playableLakeMargin
@@ -382,18 +478,81 @@ function addBoundaryFence() {
   world.add(group);
 }
 
+function addShoreLandmarks() {
+  const tower = new THREE.Group();
+  tower.position.set(lake.rx * 0.92, 0.0, -lake.rz * 0.42);
+  tower.rotation.y = -0.18;
+  const brick = new THREE.MeshStandardMaterial({ color: 0xb66b4e, roughness: 0.76 });
+  const roof = new THREE.MeshStandardMaterial({ color: 0x596562, roughness: 0.82 });
+  for (let i = 0; i < 5; i += 1) {
+    const tier = new THREE.Mesh(new THREE.BoxGeometry(0.78 - i * 0.07, 0.58, 0.78 - i * 0.07), brick);
+    tier.position.y = 0.3 + i * 0.55;
+    tier.castShadow = true;
+    tower.add(tier);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.58 - i * 0.04, 0.18, 4), roof);
+    cap.position.y = 0.64 + i * 0.55;
+    cap.rotation.y = Math.PI / 4;
+    cap.castShadow = true;
+    tower.add(cap);
+  }
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.72, 8), roof);
+  spire.position.y = 3.34;
+  spire.castShadow = true;
+  tower.add(spire);
+  world.add(tower);
+
+  const pavilion = new THREE.Group();
+  pavilion.position.set(-lake.rx * 0.42, 0.04, lake.rz * 0.92);
+  const stone = new THREE.MeshStandardMaterial({ color: 0xded4b0, roughness: 0.9 });
+  const darkWood = new THREE.MeshStandardMaterial({ color: 0x764a34, roughness: 0.78 });
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.96, 0.12, 16), stone);
+  base.position.y = 0.06;
+  pavilion.add(base);
+  for (const [x, z] of [[-0.52, -0.52], [0.52, -0.52], [-0.52, 0.52], [0.52, 0.52]]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.72, 8), darkWood);
+    post.position.set(x, 0.46, z);
+    post.castShadow = true;
+    pavilion.add(post);
+  }
+  const pavilionRoof = new THREE.Mesh(new THREE.ConeGeometry(1.05, 0.46, 4), new THREE.MeshStandardMaterial({ color: 0x8f4b32, roughness: 0.74 }));
+  pavilionRoof.position.y = 0.96;
+  pavilionRoof.rotation.y = Math.PI / 4;
+  pavilionRoof.castShadow = true;
+  pavilion.add(pavilionRoof);
+  world.add(pavilion);
+
+  const pathMaterial = new THREE.MeshStandardMaterial({ color: 0xd8cfa9, roughness: 0.92 });
+  for (let i = 0; i < 24; i += 1) {
+    const a = -2.4 + i * 0.1;
+    const stoneStep = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.035, 0.34), pathMaterial);
+    stoneStep.position.set(Math.cos(a) * lake.rx * 1.08, 0.012, Math.sin(a) * lake.rz * 1.08);
+    stoneStep.rotation.y = -a;
+    stoneStep.receiveShadow = true;
+    world.add(stoneStep);
+  }
+}
+
 function addIsland() {
   const group = new THREE.Group();
-  group.position.set(0.25, 0.03, -0.43);
+  group.position.set(lake.rx * 0.08, 0.03, -lake.rz * 0.07);
   const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.85, 1.95, 0.24, 36),
+    new THREE.CylinderGeometry(4.2, 4.48, 0.32, 48),
     new THREE.MeshStandardMaterial({ color: 0xd2c27d, roughness: 0.9 })
   );
   base.scale.z = 0.52;
   base.castShadow = true;
   base.receiveShadow = true;
   group.add(base);
-  for (const [x, z, r] of [[-0.65, -0.16, 0.48], [0.55, -0.18, 0.56]]) {
+  const grass = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.72, 3.9, 0.12, 48),
+    new THREE.MeshStandardMaterial({ color: 0x89a95a, roughness: 0.9 })
+  );
+  grass.position.y = 0.2;
+  grass.scale.z = 0.48;
+  grass.receiveShadow = true;
+  group.add(grass);
+
+  for (const [x, z, r] of [[-1.5, -0.36, 0.74], [1.45, -0.32, 0.86], [0.3, 0.62, 0.62]]) {
     const bush = new THREE.Mesh(
       new THREE.IcosahedronGeometry(r, 1),
       new THREE.MeshStandardMaterial({ color: 0x668f3c, roughness: 0.86 })
@@ -402,13 +561,44 @@ function addIsland() {
     bush.castShadow = true;
     group.add(bush);
   }
-  const tower = new THREE.Mesh(
-    new THREE.BoxGeometry(0.45, 0.78, 0.45),
-    new THREE.MeshStandardMaterial({ color: 0xb24d32, roughness: 0.7 })
+  group.add(createTree("willow", 0.78, -2.2, 0.24));
+  group.add(createTree("pine", 0.68, 2.2, 0.18));
+
+  const pavilion = new THREE.Group();
+  pavilion.position.set(0.2, 0.18, -0.06);
+  const floor = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.74, 0.8, 0.1, 12),
+    new THREE.MeshStandardMaterial({ color: 0xcdbb82, roughness: 0.86 })
   );
-  tower.position.set(0.14, 0.54, 0.1);
-  tower.castShadow = true;
-  group.add(tower);
+  floor.position.y = 0.08;
+  pavilion.add(floor);
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(0.88, 0.36, 4),
+    new THREE.MeshStandardMaterial({ color: 0x9a5136, roughness: 0.78 })
+  );
+  roof.position.y = 0.82;
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = true;
+  pavilion.add(roof);
+  for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) {
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.052, 0.62, 8),
+      new THREE.MeshStandardMaterial({ color: 0x724932, roughness: 0.8 })
+    );
+    post.position.set(x, 0.42, z);
+    post.castShadow = true;
+    pavilion.add(post);
+  }
+  group.add(pavilion);
+
+  const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x9b9b8a, roughness: 0.92 });
+  for (const [x, z, s] of [[-3.5, -0.05, 0.34], [-2.8, 0.52, 0.24], [3.4, -0.42, 0.3], [2.7, 0.46, 0.22]]) {
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMaterial);
+    rock.position.set(x, 0.27, z);
+    rock.scale.y = 0.55;
+    rock.castShadow = true;
+    group.add(rock);
+  }
   world.add(group);
 }
 
@@ -480,19 +670,47 @@ function buildDuckView() {
 function createTrashMesh(item) {
   const group = new THREE.Group();
   const [w, h, d] = item.type.size;
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshStandardMaterial({
-      color: item.type.color,
-      roughness: 0.62,
-      emissive: item.urgent ? 0x4c0907 : 0x000000,
-      emissiveIntensity: item.urgent ? 0.35 : 0
-    })
-  );
-  body.castShadow = true;
-  group.add(body);
+  const material = new THREE.MeshStandardMaterial({
+    color: item.type.color,
+    roughness: 0.62,
+    emissive: item.urgent ? 0x4c0907 : 0x000000,
+    emissiveIntensity: item.urgent ? 0.35 : 0
+  });
+  if (item.type.name === "塑料瓶") {
+    const bottle = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.52, h * 0.66, w, 16), material);
+    bottle.rotation.z = Math.PI / 2;
+    bottle.castShadow = true;
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(h * 0.42, h * 0.42, 0.12, 12),
+      new THREE.MeshStandardMaterial({ color: 0x315f96, roughness: 0.56 })
+    );
+    cap.rotation.z = Math.PI / 2;
+    cap.position.x = w * 0.58;
+    cap.castShadow = true;
+    group.add(bottle, cap);
+  } else if (item.type.name === "纸杯") {
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.35, w * 0.25, h * 1.45, 16), material);
+    cup.rotation.x = Math.PI / 2;
+    cup.castShadow = true;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(w * 0.35, 0.018, 8, 24), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.68 }));
+    rim.rotation.x = Math.PI / 2;
+    rim.position.z = h * 0.72;
+    group.add(cup, rim);
+  } else {
+    const wrapper = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    wrapper.scale.set(1, 0.55, 1);
+    wrapper.castShadow = true;
+    group.add(wrapper);
+    for (let i = -1; i <= 1; i += 1) {
+      const crease = new THREE.Mesh(new THREE.BoxGeometry(0.018, h * 0.9, d * 0.92), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.26 }));
+      crease.position.x = i * w * 0.24;
+      crease.position.y = h * 0.1;
+      group.add(crease);
+    }
+  }
+
   const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.46, 0.025, 8, 36),
+    new THREE.TorusGeometry(item.urgent ? 0.66 : 0.52, item.urgent ? 0.032 : 0.024, 8, 40),
     new THREE.MeshBasicMaterial({ color: item.urgent ? 0xb33327 : 0xffffff, transparent: true, opacity: item.urgent ? 0.9 : 0.0 })
   );
   ring.rotation.x = Math.PI / 2;
@@ -658,7 +876,7 @@ function performAction() {
   }
   const duck = state.duck;
 
-  if (carryingCount() > 0 && dist(duck, recycle) < 2.1) {
+  if (carryingCount() > 0 && dist(duck, recycle) < 3.0) {
     const cleanedItems = [...duck.carrying];
     const urgentCleaned = cleanedItems.filter((item) => item.urgent).length;
     const comboBonus = state.comboTimer > 0 ? Math.min(4, state.combo) : 0;
@@ -777,7 +995,7 @@ function updateDuck(dt) {
   if (wantsSprint) duck.stamina = Math.max(0, duck.stamina - dt * duck.sprintDrain);
   else duck.stamina = Math.min(duck.maxStamina, duck.stamina + dt * (isWater(duck.x, duck.z) ? 20 : 28));
 
-  const baseSpeed = isWater(duck.x, duck.z) ? 5.3 : 3.0;
+  const baseSpeed = isWater(duck.x, duck.z) ? 7.2 : 4.2;
   const speed = baseSpeed * (duck.sprinting ? 1.55 : 1);
   duck.vx += (mx * speed - duck.vx) * Math.min(1, dt * 9);
   duck.vz += (mz * speed - duck.vz) * Math.min(1, dt * 9);
@@ -935,6 +1153,10 @@ function removeMesh(mesh) {
 function syncScene(force = false) {
   if (!state) return;
   refs.water.material.color.setHex(state.clarity > 45 ? 0x4ea3b6 : 0x596f74);
+  for (const detail of refs.waterDetails) {
+    detail.mesh.material.opacity = detail.baseOpacity * (0.72 + Math.sin(state.time * detail.speed + detail.phase) * 0.28);
+    detail.mesh.position.y = detail.baseY + Math.sin(state.time * detail.speed + detail.phase) * 0.006;
+  }
   const nearest = nearestTrash();
 
   for (const item of state.trash) {
@@ -1019,8 +1241,8 @@ function updateMinimap() {
   const makeDot = (x, z, className) => {
     const dot = document.createElement("i");
     dot.className = `radar-dot ${className}`;
-    dot.style.left = `${50 + x / lake.rx * 42}%`;
-    dot.style.top = `${50 + z / lake.rz * 38}%`;
+    dot.style.left = `${50 + x / (lake.rx * playableLakeMargin) * 44}%`;
+    dot.style.top = `${50 + z / (lake.rz * playableLakeMargin) * 40}%`;
     ui.radarMap.append(dot);
     refs.minimap.push(dot);
   };
@@ -1067,7 +1289,7 @@ function updateUi() {
   const nearTrash = nearestTrash();
   const nearVisitor = nearestVisitor();
   let action = "巡湖中";
-  if (carryingCount() > 0 && dist(duck, recycle) < 2.1) action = "投放到回收点";
+  if (carryingCount() > 0 && dist(duck, recycle) < 3.0) action = "投放到回收点";
   else if (carryingCount() > 0) action = `叼着${carriedLabel(duck.carrying)} (${carryingCount()}/${duck.carryCapacity})`;
   else if (nearTrash && nearTrash.d < 1.45) action = `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
   else if (nearVisitor && nearVisitor.d < (duck.sign ? 2.45 : 1.8)) action = duck.sign ? "举牌提醒游客" : "鸣叫提醒游客";
@@ -1092,9 +1314,9 @@ function updateUi() {
 }
 
 function regionName(item) {
-  if (Math.abs(item.x) < 4.2 && Math.abs(item.z) < 2.3) return "湖心";
-  if (item.z < -2.3) return item.x < 0 ? "西北水域" : "东北水域";
-  if (item.z > 2.7) return item.x < 0 ? "西南水域" : "东南水域";
+  if (Math.abs(item.x) < lake.rx * 0.24 && Math.abs(item.z) < lake.rz * 0.22) return "湖心岛附近";
+  if (item.z < -lake.rz * 0.32) return item.x < 0 ? "西北水域" : "博雅塔前水域";
+  if (item.z > lake.rz * 0.34) return item.x < 0 ? "钟亭岸边" : "东南水域";
   return item.x < 0 ? "西侧水域" : "东侧水域";
 }
 
