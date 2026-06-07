@@ -19,9 +19,34 @@ const ui = {
 };
 
 const oldLake = { cx: 642, cy: 375, rx: 495, ry: 255 };
-const lake = { rx: 31.5, rz: 16.3 };
-const playableLakeMargin = 1.22;
-const recycle = oldToWorld(174, 195);
+const lake = { rx: 40.5, rz: 21.2 };
+const playableLakeMargin = 1.18;
+const bankTopY = 0.62;
+const roadTopY = 0.68;
+const islandLiftY = 0.38;
+const bridgeDeckTopY = 0.66;
+const duckWaterEyeY = 0.34;
+const duckLandEyeLift = 0.04;
+const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
+const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
+const bridgeCenterZ = (islandCenter.z - lake.rz * 1.02) / 2;
+const recycleSpots = [-2.45, -1.45, -0.45, 0.55, 1.55, 2.55].map((a) => ({
+  x: Math.cos(a) * lake.rx * 1.19,
+  z: Math.sin(a) * lake.rz * 1.19
+}));
+const bridgePillarObstacles = [-lake.rz * 0.27, 0, lake.rz * 0.27].flatMap((z) => (
+  [-1.3, 1.3].map((x) => ({
+    x: islandCenter.x + x,
+    z: bridgeCenterZ + z,
+    rx: 0.46,
+    rz: 0.52
+  }))
+));
+const solidObstacles = [
+  { x: islandCenter.x, z: islandCenter.z, rx: 9.0, rz: 5.0 },
+  { x: stoneBoatCenter.x, z: stoneBoatCenter.z, rx: 1.35, rz: 2.9 },
+  ...bridgePillarObstacles
+];
 const keys = new Set();
 const pointer = { dragging: false, x: 0, y: 0 };
 const clock = new THREE.Clock();
@@ -45,9 +70,9 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xbfe2e5);
-scene.fog = new THREE.Fog(0xbfe2e5, 38, 118);
+scene.fog = new THREE.Fog(0xbfe2e5, 48, 150);
 
-const camera = new THREE.PerspectiveCamera(68, 16 / 9, 0.08, 170);
+const camera = new THREE.PerspectiveCamera(68, 16 / 9, 0.08, 210);
 camera.rotation.order = "YXZ";
 scene.add(camera);
 
@@ -57,8 +82,8 @@ sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.left = -58;
 sun.shadow.camera.right = 58;
-sun.shadow.camera.top = 42;
-sun.shadow.camera.bottom = -42;
+sun.shadow.camera.top = 54;
+sun.shadow.camera.bottom = -54;
 scene.add(sun);
 scene.add(new THREE.HemisphereLight(0xdff5ff, 0x7d9a58, 1.7));
 
@@ -77,6 +102,10 @@ const refs = {
   rings: new Set(),
   targetBeacon: null,
   waterDetails: [],
+  flowLines: [],
+  walkers: [],
+  recycleBins: [],
+  channelBlockers: [],
   minimap: []
 };
 
@@ -89,12 +118,12 @@ function reset() {
   pitch = -0.12;
   state = {
     time: 0,
-    clarity: 95,
+    clarity: 50,
     awareness: 12,
     combo: 0,
     comboTimer: 0,
     score: 0,
-    targetScore: 14,
+    targetScore: 8,
     result: "playing",
     upgradeOffered: false,
     upgrade: null,
@@ -112,7 +141,8 @@ function reset() {
       sprintDrain: 34,
       quackBoost: 0,
       sprinting: false,
-      bob: 0
+      bob: 0,
+      eyeY: duckEyeTargetY(oldToWorld(625, 386).x, oldToWorld(625, 386).z)
     },
     ripples: [],
     soundWaves: [],
@@ -155,7 +185,7 @@ function makeTrash(x, y, typeIndex, urgent = false) {
 }
 
 function makeVisitor(x, y, label, timer) {
-  const p = oldToWorld(x, y);
+  const p = placeOnShore(oldToWorld(x, y), 1.14);
   return {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()),
     x: p.x,
@@ -168,6 +198,7 @@ function makeVisitor(x, y, label, timer) {
     shame: 0,
     throwWindup: 0,
     nextTarget: null,
+    talkTimer: 3 + Math.random() * 5,
     drift: Math.random() * Math.PI * 2
   };
 }
@@ -194,6 +225,36 @@ function isWater(x, z) {
   return lakeValue(x, z) < 1;
 }
 
+function placeOnShore(point, radius = 1.14) {
+  const r = lakeRadius(point.x, point.z);
+  if (!Number.isFinite(r) || r === 0) return { x: lake.rx * radius, z: 0 };
+  const target = Math.max(radius, Math.min(playableLakeMargin, r));
+  const scale = target / r;
+  return { x: point.x * scale, z: point.z * scale };
+}
+
+function lakeRadius(x, z) {
+  return Math.sqrt(lakeValue(x, z));
+}
+
+function smoothstep(edge0, edge1, value) {
+  const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function terrainHeightAt(x, z) {
+  const r = lakeRadius(x, z);
+  if (r < 0.985) return 0;
+  if (r < 1.06) return smoothstep(0.985, 1.06, r) * bankTopY;
+  if (r < 1.18) return bankTopY + smoothstep(1.06, 1.18, r) * (roadTopY - bankTopY);
+  return roadTopY;
+}
+
+function duckEyeTargetY(x, z) {
+  const shoreAmount = smoothstep(0.98, 1.06, lakeRadius(x, z));
+  return terrainHeightAt(x, z) + duckWaterEyeY + shoreAmount * duckLandEyeLift;
+}
+
 function clampToLake(point, margin = 0.96) {
   const v = Math.sqrt(lakeValue(point.x, point.z));
   if (!Number.isFinite(v) || v === 0) return { ...point, x: 0, z: 0 };
@@ -206,13 +267,44 @@ function clampToLake(point, margin = 0.96) {
   };
 }
 
+function pushOutOfSolidObstacles(point) {
+  let result = point;
+  for (const obstacle of solidObstacles) {
+    const rx = obstacle.rx + 0.45;
+    const rz = obstacle.rz + 0.45;
+    const dx = result.x - obstacle.x;
+    const dz = result.z - obstacle.z;
+    const v = Math.sqrt((dx * dx) / (rx * rx) + (dz * dz) / (rz * rz));
+    if (v < 1) {
+      if (!Number.isFinite(v) || v === 0) {
+        result = { ...result, x: obstacle.x + rx, z: obstacle.z };
+      } else {
+        result = {
+          ...result,
+          x: obstacle.x + dx / v,
+          z: obstacle.z + dz / v
+        };
+      }
+    }
+  }
+  return result;
+}
+
+function isSolidObstacle(x, z) {
+  return solidObstacles.some((obstacle) => {
+    const rx = obstacle.rx + 0.45;
+    const rz = obstacle.rz + 0.45;
+    return ((x - obstacle.x) ** 2) / (rx * rx) + ((z - obstacle.z) ** 2) / (rz * rz) < 1;
+  });
+}
+
 function randomWaterTarget() {
   for (let i = 0; i < 40; i += 1) {
     const x = (Math.random() * 2 - 1) * lake.rx * 0.82;
     const z = (Math.random() * 2 - 1) * lake.rz * 0.82;
-    if (isWater(x, z)) return { x, z };
+    if (isWater(x, z) && !isSolidObstacle(x, z)) return { x, z };
   }
-  return { x: 0, z: 0 };
+  return { x: -lake.rx * 0.38, z: lake.rz * 0.12 };
 }
 
 function dist(a, b) {
@@ -260,7 +352,7 @@ function disposeObject(object) {
 
 function buildWorld() {
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(172, 112),
+    new THREE.PlaneGeometry(230, 150),
     new THREE.MeshStandardMaterial({ color: 0xcfdc9f, roughness: 0.95 })
   );
   ground.rotation.x = -Math.PI / 2;
@@ -296,18 +388,77 @@ function buildWorld() {
   shore.position.y = 0.04;
   world.add(shore);
 
+  addRaisedBank();
   addDistantHills();
+  addRingRoad();
+  addLangrunChannel();
   addBridge();
   addTrees();
+  addShoreBuildings();
   addShoreLandmarks();
+  addWalkingVisitors();
   addIsland();
   addRecycle();
   addBoundaryFence();
 }
 
+function addRaisedBank() {
+  const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x6f9a48, roughness: 0.92 });
+  const flowerColors = [0xd95757, 0xe6cf56, 0xf2f0f5, 0x7aa5d9];
+  const segments = 128;
+  addEllipticalSlope(0.985, 1.06, 0.025, bankTopY, 0x9fbd6f, segments);
+  addEllipticalSlope(1.06, 1.18, bankTopY, roadTopY, 0xb8cc83, segments);
+  addEllipticalSlope(1.18, 1.32, roadTopY - 0.02, 0.08, 0xb7c884, segments);
+  for (let i = 0; i < segments; i += 1) {
+    const a = i / segments * Math.PI * 2;
+    if (i % 3 === 0) {
+      const r = 1.025 + (i % 4) * 0.018;
+      const x = Math.cos(a) * lake.rx * r;
+      const z = Math.sin(a) * lake.rz * r;
+      const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.42, 5), grassMaterial);
+      tuft.position.set(x, terrainHeightAt(x, z) + 0.21, z);
+      tuft.rotation.set(Math.random() * 0.35, a, Math.random() * 0.35);
+      world.add(tuft);
+    }
+    if (i % 8 === 0) {
+      const r = 1.065 + (i % 3) * 0.022;
+      const x = Math.cos(a) * lake.rx * r;
+      const z = Math.sin(a) * lake.rz * r;
+      const flower = new THREE.Mesh(
+        new THREE.SphereGeometry(0.09, 8, 6),
+        new THREE.MeshStandardMaterial({ color: flowerColors[(i / 8) % flowerColors.length], roughness: 0.82 })
+      );
+      flower.position.set(x, terrainHeightAt(x, z) + 0.08, z);
+      flower.scale.y = 0.55;
+      world.add(flower);
+    }
+  }
+}
+
+function addEllipticalSlope(innerRadius, outerRadius, innerY, outerY, color, segments) {
+  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.96, side: THREE.DoubleSide });
+  for (let i = 0; i < segments; i += 1) {
+    const a = i / segments * Math.PI * 2;
+    const next = (i + 1) / segments * Math.PI * 2;
+    const vertices = new Float32Array([
+      Math.cos(a) * lake.rx * innerRadius, innerY, Math.sin(a) * lake.rz * innerRadius,
+      Math.cos(next) * lake.rx * innerRadius, innerY, Math.sin(next) * lake.rz * innerRadius,
+      Math.cos(next) * lake.rx * outerRadius, outerY, Math.sin(next) * lake.rz * outerRadius,
+      Math.cos(a) * lake.rx * outerRadius, outerY, Math.sin(a) * lake.rz * outerRadius
+    ]);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    geometry.computeVertexNormals();
+    const slope = new THREE.Mesh(geometry, material);
+    slope.receiveShadow = true;
+    world.add(slope);
+  }
+}
+
 function addWaterDetails() {
   const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xdaf9ff, transparent: true, opacity: 0.16 });
-  for (let i = 0; i < 28; i += 1) {
+  for (let i = 0; i < 42; i += 1) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.006, 6, 96), lineMaterial.clone());
     const a = i * 2.399;
     const radius = 0.18 + (i % 9) * 0.085 + Math.random() * 0.035;
@@ -318,14 +469,16 @@ function addWaterDetails() {
     refs.waterDetails.push({ mesh: ring, phase: Math.random() * Math.PI * 2, speed: 0.45 + Math.random() * 0.35, baseY: ring.position.y, baseOpacity: ring.material.opacity });
   }
 
-  const reflectionMaterial = new THREE.MeshBasicMaterial({ color: 0x243f40, transparent: true, opacity: 0.18, depthWrite: false });
-  for (let i = 0; i < 5; i += 1) {
-    const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.22 + i * 0.09, 4.8 - i * 0.52), reflectionMaterial.clone());
-    strip.rotation.x = -Math.PI / 2;
-    strip.rotation.z = 0.04 * (i - 2);
-    strip.position.set(lake.rx * 0.72 + i * 0.28, 0.031 + i * 0.001, -lake.rz * 0.33 + i * 0.18);
-    world.add(strip);
-    refs.waterDetails.push({ mesh: strip, phase: i * 0.7, speed: 0.5, baseY: strip.position.y, baseOpacity: strip.material.opacity });
+  const flowMaterial = new THREE.MeshBasicMaterial({ color: 0xb7eef4, transparent: true, opacity: 0.22, depthWrite: false });
+  for (let i = 0; i < 18; i += 1) {
+    const flow = new THREE.Mesh(new THREE.PlaneGeometry(3.2 + Math.random() * 3.5, 0.045), flowMaterial.clone());
+    const z = (Math.random() * 2 - 1) * lake.rz * 0.58;
+    const x = -lake.rx * 0.82 + Math.random() * lake.rx * 1.64;
+    flow.position.set(x, 0.038 + i * 0.0003, z);
+    flow.rotation.x = -Math.PI / 2;
+    flow.rotation.z = -0.03 + Math.random() * 0.06;
+    world.add(flow);
+    refs.flowLines.push({ mesh: flow, phase: Math.random() * Math.PI * 2, speed: 1.8 + Math.random() * 1.2, baseZ: z });
   }
 }
 
@@ -333,11 +486,11 @@ function addDistantHills() {
   const hillMaterial = new THREE.MeshStandardMaterial({ color: 0xa9bf84, roughness: 0.92 });
   const shadowMaterial = new THREE.MeshStandardMaterial({ color: 0x819d6f, roughness: 0.95 });
   const hills = [
-    [-42, -35, 22, 5.2, 11, hillMaterial],
-    [-10, -38, 34, 6.4, 13, shadowMaterial],
-    [29, -34, 26, 5.8, 12, hillMaterial],
-    [48, 24, 28, 4.6, 10, shadowMaterial],
-    [-50, 25, 24, 4.8, 11, hillMaterial]
+    [-56, -45, 28, 7.4, 15, hillMaterial],
+    [-14, -50, 42, 8.2, 17, shadowMaterial],
+    [38, -45, 34, 7.8, 15, hillMaterial],
+    [62, 31, 34, 5.4, 13, shadowMaterial],
+    [-66, 32, 32, 5.8, 14, hillMaterial]
   ];
   for (const [x, z, sx, sy, sz, material] of hills) {
     const hill = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), material);
@@ -348,44 +501,139 @@ function addDistantHills() {
   }
 }
 
+function addRingRoad() {
+  const roadMaterial = new THREE.MeshStandardMaterial({ color: 0xc8bd96, roughness: 0.93 });
+  const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0xeee1b8, roughness: 0.9 });
+  const segments = 96;
+  for (let i = 0; i < segments; i += 1) {
+    const a = i / segments * Math.PI * 2;
+    const next = (i + 1) / segments * Math.PI * 2;
+    const x = Math.cos(a) * lake.rx * 1.15;
+    const z = Math.sin(a) * lake.rz * 1.15;
+    const nx = Math.cos(next) * lake.rx * 1.15;
+    const nz = Math.sin(next) * lake.rz * 1.15;
+    const len = Math.hypot(nx - x, nz - z);
+    const tile = new THREE.Mesh(new THREE.BoxGeometry(len * 1.06, 0.035, 1.15), roadMaterial);
+    tile.position.set((x + nx) / 2, roadTopY - 0.018, (z + nz) / 2);
+    tile.rotation.y = Math.atan2(nx - x, nz - z) + Math.PI / 2;
+    tile.receiveShadow = true;
+    world.add(tile);
+    if (i % 4 === 0) {
+      const curb = new THREE.Mesh(new THREE.BoxGeometry(len * 0.92, 0.035, 0.08), edgeMaterial);
+      curb.position.set(Math.cos(a) * lake.rx * 1.08, roadTopY + 0.02, Math.sin(a) * lake.rz * 1.08);
+      curb.rotation.y = tile.rotation.y;
+      world.add(curb);
+    }
+  }
+}
+
+function addLangrunChannel() {
+  const group = new THREE.Group();
+  group.position.set(lake.rx * 0.72, 0.018, -lake.rz * 0.98);
+  group.rotation.y = -0.72;
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(15, 3.1),
+    new THREE.MeshPhysicalMaterial({
+      color: 0x4ea3b6,
+      roughness: 0.4,
+      clearcoat: 0.4,
+      clearcoatRoughness: 0.34
+    })
+  );
+  water.rotation.x = -Math.PI / 2;
+  water.position.x = 5.2;
+  group.add(water);
+
+  const bankMaterial = new THREE.MeshStandardMaterial({ color: 0xb8c984, roughness: 0.94 });
+  for (const z of [-1.95, 1.95]) {
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(15.5, 0.38, 0.56), bankMaterial);
+    edge.position.set(5.15, 0.26, z);
+    edge.castShadow = true;
+    edge.receiveShadow = true;
+    group.add(edge);
+  }
+
+  const blocker = new THREE.Group();
+  blocker.position.set(1.35, 0.14, 0);
+  const colors = [0xe96a4f, 0xc5e8f0, 0xf3f0dc, 0x9b9b8a];
+  for (let i = 0; i < 18; i += 1) {
+    const piece = new THREE.Mesh(
+      i % 4 === 0 ? new THREE.CylinderGeometry(0.12, 0.16, 0.56, 10) : new THREE.BoxGeometry(0.42, 0.16, 0.3),
+      new THREE.MeshStandardMaterial({ color: colors[i % colors.length], roughness: 0.76 })
+    );
+    piece.position.set((Math.random() - 0.5) * 2.5, 0.1 + Math.random() * 0.35, (Math.random() - 0.5) * 2.2);
+    piece.rotation.set(Math.random() * 2, Math.random() * 2, Math.random() * 2);
+    piece.castShadow = true;
+    blocker.add(piece);
+  }
+  group.add(blocker);
+  refs.channelBlockers.push(blocker);
+  world.add(group);
+}
+
 function addBridge() {
   const group = new THREE.Group();
-  group.position.set(lake.rx * 0.63, 0.12, lake.rz * 0.48);
-  group.rotation.y = -0.24;
+  group.position.set(islandCenter.x, 0, bridgeCenterZ);
   const deck = new THREE.Mesh(
-    new THREE.BoxGeometry(8.2, 0.2, 0.72),
+    new THREE.BoxGeometry(3.2, 0.18, lake.rz * 0.92),
     new THREE.MeshStandardMaterial({ color: 0xb96d42, roughness: 0.7 })
   );
+  deck.position.y = bridgeDeckTopY - 0.09;
   deck.castShadow = true;
   group.add(deck);
-  for (let x = -3.8; x <= 3.8; x += 0.62) {
+  const railMaterial = new THREE.MeshStandardMaterial({ color: 0x853f2d, roughness: 0.7 });
+  for (const x of [-1.48, 1.48]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, lake.rz * 0.9), railMaterial);
+    rail.position.set(x, bridgeDeckTopY + 0.28, 0);
+    rail.castShadow = true;
+    group.add(rail);
+  }
+  for (let z = -lake.rz * 0.38; z <= lake.rz * 0.38; z += 2.15) {
     const post = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.78, 0.1),
-      new THREE.MeshStandardMaterial({ color: 0x853f2d, roughness: 0.7 })
+      new THREE.BoxGeometry(0.14, 0.54, 0.14),
+      railMaterial
     );
-    post.position.set(x, 0.34, -0.29);
-    post.castShadow = true;
-    group.add(post);
+    for (const x of [-1.48, 1.48]) {
+      const p = post.clone();
+      p.position.set(x, bridgeDeckTopY + 0.18, z);
+      p.castShadow = true;
+      group.add(p);
+    }
+  }
+  const archMaterial = new THREE.MeshStandardMaterial({ color: 0xd8c7a0, roughness: 0.84 });
+  for (const z of [-lake.rz * 0.27, 0, lake.rz * 0.27]) {
+    for (const x of [-1.3, 1.3]) {
+      const pier = new THREE.Mesh(new THREE.BoxGeometry(0.36, bridgeDeckTopY - 0.06, 0.44), archMaterial);
+      pier.position.set(x, (bridgeDeckTopY - 0.06) / 2, z);
+      pier.castShadow = true;
+      group.add(pier);
+    }
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(1.3, 0.16, 8, 24, Math.PI), archMaterial);
+    arch.position.set(0, 0.42, z);
+    arch.rotation.z = Math.PI;
+    arch.rotation.y = Math.PI / 2;
+    arch.castShadow = true;
+    group.add(arch);
   }
   world.add(group);
 }
 
 function addTrees() {
-  for (let i = 0; i < 72; i += 1) {
-    const a = i / 72 * Math.PI * 2;
+  for (let i = 0; i < 96; i += 1) {
+    const a = i / 96 * Math.PI * 2;
     const lane = i % 3;
     const radius = playableLakeMargin + 0.1 + lane * 0.17 + Math.random() * 0.08;
     const x = Math.cos(a) * lake.rx * radius;
     const z = Math.sin(a) * lake.rz * radius;
     const type = i % 5 === 0 ? "willow" : i % 4 === 0 ? "pine" : "broadleaf";
-    world.add(createTree(type, 0.9 + Math.random() * 0.55, x, z));
+    world.add(createTree(type, 1.22 + Math.random() * 0.72, x, z));
   }
 
-  for (let i = 0; i < 34; i += 1) {
+  for (let i = 0; i < 48; i += 1) {
     const side = i % 2 === 0 ? -1 : 1;
     const x = side * (lake.rx * 1.75 + Math.random() * 18);
     const z = (Math.random() * 2 - 1) * lake.rz * 1.75;
-    world.add(createTree(i % 3 === 0 ? "pine" : "broadleaf", 1.1 + Math.random() * 0.8, x, z));
+    world.add(createTree(i % 3 === 0 ? "pine" : "broadleaf", 1.6 + Math.random() * 1.0, x, z));
   }
 }
 
@@ -447,14 +695,16 @@ function addBoundaryFence() {
 
   const addPost = (x, z) => {
     const post = new THREE.Mesh(postGeometry, material);
-    post.position.set(x, 0.36, z);
+    post.position.set(x, terrainHeightAt(x, z) + 0.42, z);
     post.castShadow = true;
     group.add(post);
   };
   const addRail = (a, b) => {
     const rail = new THREE.Mesh(railGeometry, material);
     const length = Math.hypot(a.x - b.x, a.z - b.z);
-    rail.position.set((a.x + b.x) / 2, 0.62, (a.z + b.z) / 2);
+    const x = (a.x + b.x) / 2;
+    const z = (a.z + b.z) / 2;
+    rail.position.set(x, terrainHeightAt(x, z) + 0.62, z);
     rail.scale.x = length;
     rail.rotation.y = Math.atan2(b.x - a.x, b.z - a.z) + Math.PI / 2;
     rail.castShadow = true;
@@ -478,31 +728,193 @@ function addBoundaryFence() {
   world.add(group);
 }
 
+function createBuilding(width, depth, floors, color, roofColor = 0x6c5340) {
+  const group = new THREE.Group();
+  const wall = new THREE.MeshStandardMaterial({ color, roughness: 0.78 });
+  const roof = new THREE.MeshStandardMaterial({ color: roofColor, roughness: 0.8 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(width, floors * 0.78, depth), wall);
+  body.position.y = floors * 0.39;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(width + 0.35, 0.22, depth + 0.35), roof);
+  cap.position.y = floors * 0.78 + 0.14;
+  cap.castShadow = true;
+  group.add(cap);
+
+  const windowMaterial = new THREE.MeshBasicMaterial({ color: 0xe9f5d8, transparent: true, opacity: 0.72 });
+  for (let floor = 0; floor < floors; floor += 1) {
+    for (let i = 0; i < Math.max(2, Math.floor(width / 0.9)); i += 1) {
+      const win = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.28), windowMaterial);
+      win.position.set(-width * 0.42 + i * 0.82, 0.45 + floor * 0.72, -depth / 2 - 0.006);
+      win.rotation.y = Math.PI;
+      group.add(win);
+    }
+  }
+  return group;
+}
+
+function addShoreBuildings() {
+  const placements = [
+    { name: "northwest", x: -lake.rx * 1.08, z: -lake.rz * 0.7, rot: 0.22, w: 8.8, d: 2.6, floors: 2, color: 0xb99873 },
+    { name: "north", x: -lake.rx * 0.1, z: -lake.rz * 1.52, rot: -0.02, w: 14.5, d: 3.0, floors: 3, color: 0xb6a982 },
+    { name: "eastGym", x: lake.rx * 1.28, z: lake.rz * 0.14, rot: -Math.PI / 2, w: 18.8, d: 5.8, floors: 3, color: 0xc99b68, roof: 0x8f4b32 },
+    { name: "eastAnnex", x: lake.rx * 1.22, z: -lake.rz * 0.26, rot: -Math.PI / 2 + 0.04, w: 8.4, d: 3.4, floors: 2, color: 0xd7ba86 }
+  ];
+  for (const p of placements) {
+    const building = createBuilding(p.w, p.d, p.floors, p.color, p.roof);
+    building.position.set(p.x, 0, p.z);
+    building.rotation.y = p.rot;
+    world.add(building);
+  }
+
+  for (let i = 0; i < 14; i += 1) {
+    const x = -lake.rx * 0.54 + i * lake.rx * 0.08;
+    const z = -lake.rz * 1.25 + Math.sin(i) * 0.45;
+    world.add(createTree(i % 4 === 0 ? "pine" : "broadleaf", 1.85 + Math.random() * 0.45, x, z));
+  }
+
+  const slopeMaterial = new THREE.MeshStandardMaterial({ color: 0xb0c17a, roughness: 0.95 });
+  const southSlope = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 12), slopeMaterial);
+  southSlope.position.set(0, 0.08, lake.rz * 1.78);
+  southSlope.scale.set(lake.rx * 1.12, 3.4, 8.8);
+  southSlope.receiveShadow = true;
+  world.add(southSlope);
+
+  const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x8f8d7e, roughness: 0.9 });
+  const nameStone = new THREE.Mesh(new THREE.DodecahedronGeometry(1.15, 0), stoneMaterial);
+  nameStone.position.set(-lake.rx * 1.2, 0.74, lake.rz * 0.1);
+  nameStone.scale.set(1.8, 0.72, 0.85);
+  nameStone.rotation.set(0.1, -0.45, 0.08);
+  nameStone.castShadow = true;
+  world.add(nameStone);
+  const plaque = createSignSprite("未名湖", "#36433b", 1.85, 0.48);
+  plaque.position.set(-lake.rx * 1.22, 1.18, lake.rz * 0.08);
+  plaque.rotation.y = -0.45;
+  world.add(plaque);
+
+  addStoneBoat();
+}
+
+function addStoneBoat() {
+  const group = new THREE.Group();
+  group.position.set(stoneBoatCenter.x, 0.04, stoneBoatCenter.z);
+  group.rotation.y = Math.PI / 2;
+  const material = new THREE.MeshStandardMaterial({ color: 0xd8d1bd, roughness: 0.88 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x6b6258, roughness: 0.86 });
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.58, 1.42), material);
+  hull.position.y = 0.32;
+  hull.castShadow = true;
+  hull.receiveShadow = true;
+  group.add(hull);
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(0.82, 1.2, 4), material);
+  bow.rotation.z = Math.PI / 2;
+  bow.rotation.y = Math.PI / 4;
+  bow.position.set(2.95, 0.32, 0);
+  bow.castShadow = true;
+  group.add(bow);
+  const stern = bow.clone();
+  stern.position.x = -2.95;
+  stern.rotation.z = -Math.PI / 2;
+  group.add(stern);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.92, 1.08), material);
+  cabin.position.y = 1.02;
+  cabin.castShadow = true;
+  group.add(cabin);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(2.75, 0.2, 1.34), dark);
+  roof.position.y = 1.58;
+  roof.castShadow = true;
+  group.add(roof);
+  for (const x of [-0.8, 0, 0.8]) {
+    const window = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.28), new THREE.MeshBasicMaterial({ color: 0xf5edc8, transparent: true, opacity: 0.75 }));
+    window.position.set(x, 1.02, -0.55);
+    window.rotation.y = Math.PI;
+    group.add(window);
+  }
+  world.add(group);
+}
+
+function addWalkingVisitors() {
+  for (let i = 0; i < 12; i += 1) {
+    const walker = createWalkerMesh(i);
+    world.add(walker);
+    refs.walkers.push({
+      mesh: walker,
+      phase: i / 12 * Math.PI * 2,
+      speed: 0.018 + (i % 4) * 0.004,
+      radius: 1.12 + (i % 3) * 0.035,
+      wobble: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function createWalkerMesh(index) {
+  const group = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: 0xefc49c, roughness: 0.74 });
+  const shirtColors = [0x315f96, 0xb45c12, 0x6a9b5a, 0x8d5a9f];
+  const shirt = new THREE.MeshStandardMaterial({ color: shirtColors[index % shirtColors.length], roughness: 0.75 });
+  const pants = new THREE.MeshStandardMaterial({ color: 0x333f3e, roughness: 0.82 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.44, 0.16), shirt);
+  body.position.y = 0.58;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), skin);
+  head.position.y = 0.9;
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.32, 0.07), pants);
+  legL.position.set(-0.07, 0.24, 0);
+  const legR = legL.clone();
+  legR.position.x = 0.07;
+  group.add(body, head, legL, legR);
+  group.userData.legs = [legL, legR];
+  for (const part of group.children) part.castShadow = true;
+  return group;
+}
+
+function createSignSprite(text, color, width, height) {
+  const c = document.createElement("canvas");
+  c.width = 384;
+  c.height = 128;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "rgba(238,230,202,0.96)";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.strokeStyle = "rgba(120,105,80,0.7)";
+  ctx.lineWidth = 10;
+  ctx.strokeRect(5, 5, c.width - 10, c.height - 10);
+  ctx.font = "900 58px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = color;
+  ctx.fillText(text, c.width / 2, c.height / 2 + 2);
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+  sprite.scale.set(width, height, 1);
+  return sprite;
+}
+
 function addShoreLandmarks() {
   const tower = new THREE.Group();
-  tower.position.set(lake.rx * 0.92, 0.0, -lake.rz * 0.42);
+  tower.position.set(lake.rx * 0.96, terrainHeightAt(lake.rx * 0.96, lake.rz * 0.7), lake.rz * 0.7);
   tower.rotation.y = -0.18;
   const brick = new THREE.MeshStandardMaterial({ color: 0xb66b4e, roughness: 0.76 });
   const roof = new THREE.MeshStandardMaterial({ color: 0x596562, roughness: 0.82 });
-  for (let i = 0; i < 5; i += 1) {
-    const tier = new THREE.Mesh(new THREE.BoxGeometry(0.78 - i * 0.07, 0.58, 0.78 - i * 0.07), brick);
-    tier.position.y = 0.3 + i * 0.55;
+  for (let i = 0; i < 7; i += 1) {
+    const tier = new THREE.Mesh(new THREE.BoxGeometry(1.28 - i * 0.075, 0.92, 1.28 - i * 0.075), brick);
+    tier.position.y = 0.46 + i * 0.88;
     tier.castShadow = true;
     tower.add(tier);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.58 - i * 0.04, 0.18, 4), roof);
-    cap.position.y = 0.64 + i * 0.55;
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.9 - i * 0.045, 0.28, 4), roof);
+    cap.position.y = 0.98 + i * 0.88;
     cap.rotation.y = Math.PI / 4;
     cap.castShadow = true;
     tower.add(cap);
   }
-  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.72, 8), roof);
-  spire.position.y = 3.34;
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.26, 1.35, 8), roof);
+  spire.position.y = 6.98;
   spire.castShadow = true;
   tower.add(spire);
   world.add(tower);
 
   const pavilion = new THREE.Group();
-  pavilion.position.set(-lake.rx * 0.42, 0.04, lake.rz * 0.92);
+  pavilion.position.set(-lake.rx * 0.42, terrainHeightAt(-lake.rx * 0.42, lake.rz * 0.92), lake.rz * 0.92);
   const stone = new THREE.MeshStandardMaterial({ color: 0xded4b0, roughness: 0.9 });
   const darkWood = new THREE.MeshStandardMaterial({ color: 0x764a34, roughness: 0.78 });
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.96, 0.12, 16), stone);
@@ -525,7 +937,7 @@ function addShoreLandmarks() {
   for (let i = 0; i < 24; i += 1) {
     const a = -2.4 + i * 0.1;
     const stoneStep = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.035, 0.34), pathMaterial);
-    stoneStep.position.set(Math.cos(a) * lake.rx * 1.08, 0.012, Math.sin(a) * lake.rz * 1.08);
+    stoneStep.position.set(Math.cos(a) * lake.rx * 1.08, roadTopY + 0.01, Math.sin(a) * lake.rz * 1.08);
     stoneStep.rotation.y = -a;
     stoneStep.receiveShadow = true;
     world.add(stoneStep);
@@ -534,25 +946,25 @@ function addShoreLandmarks() {
 
 function addIsland() {
   const group = new THREE.Group();
-  group.position.set(lake.rx * 0.08, 0.03, -lake.rz * 0.07);
+  group.position.set(lake.rx * 0.08, islandLiftY, -lake.rz * 0.07);
   const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(4.2, 4.48, 0.32, 48),
+    new THREE.CylinderGeometry(8.0, 8.45, 0.46, 64),
     new THREE.MeshStandardMaterial({ color: 0xd2c27d, roughness: 0.9 })
   );
-  base.scale.z = 0.52;
+  base.scale.z = 0.58;
   base.castShadow = true;
   base.receiveShadow = true;
   group.add(base);
   const grass = new THREE.Mesh(
-    new THREE.CylinderGeometry(3.72, 3.9, 0.12, 48),
+    new THREE.CylinderGeometry(7.15, 7.54, 0.16, 64),
     new THREE.MeshStandardMaterial({ color: 0x89a95a, roughness: 0.9 })
   );
   grass.position.y = 0.2;
-  grass.scale.z = 0.48;
+  grass.scale.z = 0.55;
   grass.receiveShadow = true;
   group.add(grass);
 
-  for (const [x, z, r] of [[-1.5, -0.36, 0.74], [1.45, -0.32, 0.86], [0.3, 0.62, 0.62]]) {
+  for (const [x, z, r] of [[-3.8, -0.36, 1.0], [3.65, -0.32, 1.08], [0.3, 1.55, 0.78], [1.8, -1.55, 0.72], [-1.2, 2.0, 0.62]]) {
     const bush = new THREE.Mesh(
       new THREE.IcosahedronGeometry(r, 1),
       new THREE.MeshStandardMaterial({ color: 0x668f3c, roughness: 0.86 })
@@ -561,8 +973,8 @@ function addIsland() {
     bush.castShadow = true;
     group.add(bush);
   }
-  group.add(createTree("willow", 0.78, -2.2, 0.24));
-  group.add(createTree("pine", 0.68, 2.2, 0.18));
+  group.add(createTree("willow", 1.2, -4.7, 0.24));
+  group.add(createTree("pine", 1.02, 4.6, 0.18));
 
   const pavilion = new THREE.Group();
   pavilion.position.set(0.2, 0.18, -0.06);
@@ -592,7 +1004,7 @@ function addIsland() {
   group.add(pavilion);
 
   const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x9b9b8a, roughness: 0.92 });
-  for (const [x, z, s] of [[-3.5, -0.05, 0.34], [-2.8, 0.52, 0.24], [3.4, -0.42, 0.3], [2.7, 0.46, 0.22]]) {
+  for (const [x, z, s] of [[-6.8, -0.05, 0.42], [-5.8, 0.92, 0.3], [6.7, -0.76, 0.38], [5.8, 0.86, 0.3]]) {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMaterial);
     rock.position.set(x, 0.27, z);
     rock.scale.y = 0.55;
@@ -603,34 +1015,43 @@ function addIsland() {
 }
 
 function addRecycle() {
+  for (let i = 0; i < recycleSpots.length; i += 1) {
+    const bin = createRecycleBin(recycleSpots[i], i === 0);
+    bin.rotation.y = i * 0.35;
+    refs.recycleBins.push(bin);
+    world.add(bin);
+  }
+}
+
+function createRecycleBin(position, primary = false) {
   const group = new THREE.Group();
-  group.position.set(recycle.x, 0.05, recycle.z);
+  group.position.set(position.x, terrainHeightAt(position.x, position.z), position.z);
   const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.9, 0.9, 0.04, 32),
+    new THREE.CylinderGeometry(primary ? 0.9 : 0.72, primary ? 0.9 : 0.72, 0.04, 32),
     new THREE.MeshStandardMaterial({ color: 0x2d8064, transparent: true, opacity: 0.32 })
   );
   const bin = new THREE.Mesh(
-    new THREE.BoxGeometry(0.8, 0.86, 0.62),
+    new THREE.BoxGeometry(primary ? 0.8 : 0.64, primary ? 0.86 : 0.72, primary ? 0.62 : 0.5),
     new THREE.MeshStandardMaterial({ color: 0x2d8064, roughness: 0.65 })
   );
-  bin.position.y = 0.45;
+  bin.position.y = primary ? 0.45 : 0.38;
   bin.castShadow = true;
   const lid = new THREE.Mesh(
-    new THREE.BoxGeometry(1.0, 0.16, 0.76),
+    new THREE.BoxGeometry(primary ? 1.0 : 0.82, 0.16, primary ? 0.76 : 0.62),
     new THREE.MeshStandardMaterial({ color: 0xe9f5e9, roughness: 0.7 })
   );
-  lid.position.y = 0.94;
+  lid.position.y = primary ? 0.94 : 0.78;
   lid.castShadow = true;
   group.add(base, bin, lid);
-  refs.recycle = group;
-  world.add(group);
+  if (primary) refs.recycle = group;
+  return group;
 }
 
 function buildDuckView() {
   const group = new THREE.Group();
   group.userData.keep = true;
-  group.position.set(0.08, -1.28, -0.92);
-  group.scale.setScalar(0.38);
+  group.position.set(0.06, -0.78, -0.98);
+  group.scale.setScalar(0.22);
 
   const body = new THREE.Mesh(
     new THREE.SphereGeometry(0.34, 24, 16),
@@ -661,8 +1082,19 @@ function buildDuckView() {
   );
   wing.scale.set(1.2, 0.32, 0.64);
   wing.position.set(-0.34, -0.04, -0.04);
+  const wingR = wing.clone();
+  wingR.position.x = 0.02;
+  wingR.position.z = 0.16;
+  wingR.scale.set(0.95, 0.28, 0.52);
 
-  group.add(body, head, beak, wing);
+  const footMaterial = new THREE.MeshStandardMaterial({ color: 0xe06f2a, roughness: 0.72 });
+  const footL = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 8), footMaterial);
+  footL.scale.set(1.5, 0.24, 0.82);
+  footL.position.set(-0.18, -0.24, -0.22);
+  const footR = footL.clone();
+  footR.position.x = 0.15;
+
+  group.add(body, head, beak, wing, wingR, footL, footR);
   refs.duckView = group;
   camera.add(group);
 }
@@ -794,6 +1226,21 @@ function addText(text, x, z, color = "#173638") {
   state.floatTexts.push({ text, x, z, y: 1.15, a: 1, color, mesh: createFloatText(text, color) });
 }
 
+function addWake(x, z, angle, strong = false) {
+  const material = new THREE.MeshBasicMaterial({ color: strong ? 0xe9fbff : 0xffffff, transparent: true, opacity: strong ? 0.62 : 0.42 });
+  for (const side of [-1, 1]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(strong ? 0.24 : 0.18, 0.012, 8, 36), material.clone());
+    const sideX = Math.cos(angle) * side * 0.18;
+    const sideZ = -Math.sin(angle) * side * 0.18;
+    ring.rotation.x = Math.PI / 2;
+    ring.rotation.z = angle + side * 0.28;
+    ring.position.set(x + sideX, 0.044, z + sideZ);
+    dynamic.add(ring);
+    refs.rings.add(ring);
+    state.ripples.push({ mesh: ring, r: strong ? 0.24 : 0.18, a: strong ? 1.15 : 0.92, speed: strong ? 2.8 : 2.1, sx: 1.55, sy: 0.42 });
+  }
+}
+
 function addRipple(x, z, color = 0xffffff) {
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(0.18, 0.014, 8, 56),
@@ -845,6 +1292,19 @@ function nearestVisitor() {
   return { visitor: best, d: bestD };
 }
 
+function nearestRecyclePoint(point = state.duck) {
+  let best = recycleSpots[0];
+  let bestD = dist(point, best);
+  for (const spot of recycleSpots) {
+    const d = dist(point, spot);
+    if (d < bestD) {
+      best = spot;
+      bestD = d;
+    }
+  }
+  return { spot: best, d: bestD };
+}
+
 function carryingCount() {
   return state.duck.carrying.length;
 }
@@ -875,8 +1335,9 @@ function performAction() {
     return;
   }
   const duck = state.duck;
+  const bin = nearestRecyclePoint(duck);
 
-  if (carryingCount() > 0 && dist(duck, recycle) < 3.0) {
+  if (carryingCount() > 0 && bin.d < 3.0) {
     const cleanedItems = [...duck.carrying];
     const urgentCleaned = cleanedItems.filter((item) => item.urgent).length;
     const comboBonus = state.comboTimer > 0 ? Math.min(4, state.combo) : 0;
@@ -885,8 +1346,8 @@ function performAction() {
     state.combo = Math.min(9, state.combo + 1);
     state.comboTimer = 8;
     state.clarity = Math.min(100, state.clarity + cleanedItems.length * 5.5 + urgentCleaned * 4.5 + comboBonus * 1.1);
-    addText(`回收 ${carriedLabel(cleanedItems)}${comboBonus ? ` x${state.combo}` : ""}`, recycle.x, recycle.z, "#2d8064");
-    addRipple(recycle.x, recycle.z, 0x2d8064);
+    addText(`回收 ${carriedLabel(cleanedItems)}${comboBonus ? ` x${state.combo}` : ""}`, bin.spot.x, bin.spot.z, "#2d8064");
+    addRipple(bin.spot.x, bin.spot.z, 0x2d8064);
     playDrop();
     if (state.score >= 4 && !duck.sign) {
       duck.sign = true;
@@ -951,10 +1412,8 @@ function update(dt) {
   if (state.clarity <= 6) {
     state.result = "lost";
     addText("湖面失守", state.duck.x, state.duck.z, "#b33327");
-  }
-  if (state.score >= state.targetScore && state.clarity >= 35) {
-    state.result = "won";
-    addText("未名湖恢复清澈", state.duck.x, state.duck.z, "#2d8064");
+  } else if (state.score >= state.targetScore) {
+    openChannelAndWin();
   }
 
   updateDuck(dt);
@@ -965,6 +1424,24 @@ function update(dt) {
   syncScene();
   updateCamera(dt);
   updateUi();
+}
+
+function openChannelAndWin() {
+  if (state.result === "won") return;
+  for (const item of state.thrown) {
+    if (item.mesh) {
+      dynamic.remove(item.mesh);
+      disposeObject(item.mesh);
+      refs.thrown.delete(item.mesh);
+    }
+  }
+  state.thrown = [];
+  state.trash = [];
+  state.result = "won";
+  state.clarity = Math.max(state.clarity, 72);
+  addText("湖底水道打开", lake.rx * 0.72, -lake.rz * 0.98, "#2d8064");
+  addText("未名湖恢复清澈", state.duck.x, state.duck.z, "#2d8064");
+  addRipple(lake.rx * 0.72, -lake.rz * 0.98, 0x2d8064);
 }
 
 function updateDuck(dt) {
@@ -1001,34 +1478,50 @@ function updateDuck(dt) {
   duck.vz += (mz * speed - duck.vz) * Math.min(1, dt * 9);
   const nextX = duck.x + duck.vx * dt;
   const nextZ = duck.z + duck.vz * dt;
-  const p = clampToLake({ x: nextX, z: nextZ }, playableLakeMargin);
+  let p = clampToLake({ x: nextX, z: nextZ }, playableLakeMargin);
+  p = pushOutOfSolidObstacles(p);
+  p = clampToLake(p, playableLakeMargin);
   if (p.x !== nextX || p.z !== nextZ) {
     duck.vx = 0;
     duck.vz = 0;
   }
   duck.x = p.x;
   duck.z = p.z;
+  duck.eyeY += (duckEyeTargetY(duck.x, duck.z) - duck.eyeY) * Math.min(1, dt * 5.2);
   duck.bob += dt * (m > 0 ? 10 : 4);
 
-  if (Math.hypot(duck.vx, duck.vz) > 1.0 && state.time % 0.28 < dt) {
-    addRipple(duck.x - dirX * 0.5, duck.z - dirZ * 0.5);
-    playSplash(duck.sprinting);
+  const swimSpeed = Math.hypot(duck.vx, duck.vz);
+  if (swimSpeed > 1.0 && state.time % (duck.sprinting ? 0.16 : 0.24) < dt) {
+    const wakeX = duck.x - dirX * 0.58;
+    const wakeZ = duck.z - dirZ * 0.58;
+    addWake(wakeX, wakeZ, yaw, duck.sprinting);
+    playSplash(duck.sprinting, swimSpeed);
   }
 }
 
 function updateVisitors(dt) {
   for (const visitor of state.visitors) {
     visitor.drift += dt;
-    visitor.x = visitor.baseX + Math.cos(visitor.drift * 0.7) * 0.2;
-    visitor.z = visitor.baseZ + Math.sin(visitor.drift * 0.9) * 0.14;
+    const drifted = placeOnShore({
+      x: visitor.baseX + Math.cos(visitor.drift * 0.7) * 0.2,
+      z: visitor.baseZ + Math.sin(visitor.drift * 0.9) * 0.14
+    }, 1.13);
+    visitor.x = drifted.x;
+    visitor.z = drifted.z;
     visitor.cooldown = Math.max(0, visitor.cooldown - dt);
     visitor.shame = Math.max(0, visitor.shame - dt);
 
     if (visitor.cooldown > 0) continue;
     visitor.timer -= dt;
+    visitor.talkTimer -= dt;
+    if (visitor.talkTimer <= 0 && dist(state.duck, visitor) < lake.rx * 0.72) {
+      visitor.talkTimer = 5.5 + Math.random() * 7.5 + state.awareness * 0.05;
+      playVisitorChatter(visitor.shame > 0);
+    }
     if (visitor.timer < 1.1 && !visitor.nextTarget) {
       visitor.nextTarget = randomWaterTarget();
       visitor.throwWindup = 1.1;
+      playVisitorWindup();
     }
     if (visitor.throwWindup > 0) visitor.throwWindup -= dt;
     if (visitor.timer <= 0) {
@@ -1048,6 +1541,7 @@ function updateVisitors(dt) {
         urgent,
         mesh: null
       });
+      playVisitorThrow(urgent);
       visitor.timer = 14 + Math.random() * 10 + state.awareness * 0.18 + (state.upgrade === "voice" ? 7 : 0);
       visitor.nextTarget = null;
       visitor.throwWindup = 0;
@@ -1111,6 +1605,13 @@ function updateTrash(dt) {
       item.vx *= -0.4;
       item.vz *= -0.4;
     }
+    if (isSolidObstacle(item.x, item.z)) {
+      const p = pushOutOfSolidObstacles(item);
+      item.x = p.x;
+      item.z = p.z;
+      item.vx *= -0.45;
+      item.vz *= -0.45;
+    }
   }
 }
 
@@ -1118,7 +1619,8 @@ function updateParticles(dt) {
   for (const ripple of state.ripples) {
     ripple.r += dt * ripple.speed;
     ripple.a -= dt * 1.15;
-    ripple.mesh.scale.setScalar(ripple.r / 0.18);
+    const size = ripple.r / 0.18;
+    ripple.mesh.scale.set(size * (ripple.sx || 1), size * (ripple.sy || 1), size);
     ripple.mesh.material.opacity = Math.max(0, ripple.a * 0.55);
   }
   for (const ripple of state.ripples.filter((ripple) => ripple.a <= 0)) removeMesh(ripple.mesh);
@@ -1157,6 +1659,27 @@ function syncScene(force = false) {
     detail.mesh.material.opacity = detail.baseOpacity * (0.72 + Math.sin(state.time * detail.speed + detail.phase) * 0.28);
     detail.mesh.position.y = detail.baseY + Math.sin(state.time * detail.speed + detail.phase) * 0.006;
   }
+  for (const line of refs.flowLines) {
+    line.mesh.position.x += 0.018 * line.speed;
+    if (line.mesh.position.x > lake.rx * 0.88) line.mesh.position.x = -lake.rx * 0.88;
+    line.mesh.position.z = line.baseZ + Math.sin(state.time * line.speed + line.phase) * 0.12;
+    line.mesh.material.opacity = 0.12 + Math.sin(state.time * 1.4 + line.phase) * 0.08;
+  }
+  for (const walker of refs.walkers) {
+    const a = walker.phase + state.time * walker.speed;
+    const x = Math.cos(a) * lake.rx * walker.radius;
+    const z = Math.sin(a) * lake.rz * walker.radius;
+    const nx = Math.cos(a + 0.02) * lake.rx * walker.radius;
+    const nz = Math.sin(a + 0.02) * lake.rz * walker.radius;
+    walker.mesh.position.set(x, terrainHeightAt(x, z), z);
+    walker.mesh.rotation.y = Math.atan2(nx - x, nz - z);
+    const step = Math.sin(state.time * 4.2 + walker.wobble) * 0.32;
+    walker.mesh.userData.legs[0].rotation.x = step;
+    walker.mesh.userData.legs[1].rotation.x = -step;
+  }
+  for (const blocker of refs.channelBlockers) {
+    blocker.visible = state.result !== "won";
+  }
   const nearest = nearestTrash();
 
   for (const item of state.trash) {
@@ -1187,7 +1710,7 @@ function syncScene(force = false) {
       mesh = createVisitorMesh(visitor);
       refs.visitors.set(visitor.id, mesh);
     }
-    mesh.position.set(visitor.x, 0, visitor.z);
+    mesh.position.set(visitor.x, terrainHeightAt(visitor.x, visitor.z), visitor.z);
     mesh.lookAt(camera.position.x, 0, camera.position.z);
     mesh.userData.shirt.color.setHex(visitor.cooldown > 0 ? 0x6a9b5a : 0x315f96);
     const wind = visitor.throwWindup > 0 ? 1 : 0;
@@ -1205,7 +1728,7 @@ function syncScene(force = false) {
     item.mesh.rotation.set(item.t * 4, item.t * 8, item.t * 3);
   }
 
-  refs.recycle.rotation.y = state.time * 0.25;
+  for (let i = 0; i < refs.recycleBins.length; i += 1) refs.recycleBins[i].rotation.y = state.time * 0.18 + i * 0.35;
   if (nearest) {
     if (!refs.targetBeacon) refs.targetBeacon = createTargetBeacon();
     refs.targetBeacon.visible = true;
@@ -1228,9 +1751,10 @@ function removeTrashMesh(item) {
 function updateCamera(dt) {
   const duck = state.duck;
   const shake = state.cameraShake > 0 ? (Math.random() - 0.5) * state.cameraShake * 0.16 : 0;
-  camera.position.set(duck.x + shake, 0.72 + Math.sin(duck.bob) * 0.035, duck.z + shake);
+  const eyeY = duck.eyeY ?? duckEyeTargetY(duck.x, duck.z);
+  camera.position.set(duck.x + shake, eyeY + Math.sin(duck.bob) * 0.025, duck.z + shake);
   camera.rotation.set(pitch, yaw, 0);
-  refs.duckView.position.y = -1.28 + Math.sin(duck.bob) * 0.018;
+  refs.duckView.position.y = -0.78 + Math.sin(duck.bob) * 0.01;
 }
 
 function updateMinimap() {
@@ -1264,9 +1788,9 @@ function updateUi() {
   ui.scorePill.textContent = state.combo > 1 ? `清理 ${state.score} / ${state.targetScore}  x${state.combo}` : `清理 ${state.score} / ${state.targetScore}`;
 
   if (state.result === "won") {
-    ui.actionText.textContent = "湖面已守住";
-    ui.missionText.textContent = "Demo 完成";
-    ui.nearestText.textContent = "全部处理";
+    ui.actionText.textContent = "水道已打开";
+    ui.missionText.textContent = "游戏胜利";
+    ui.nearestText.textContent = "通往朗润湖";
     ui.actionButton.textContent = "再玩一次";
     return;
   }
@@ -1288,8 +1812,9 @@ function updateUi() {
   const duck = state.duck;
   const nearTrash = nearestTrash();
   const nearVisitor = nearestVisitor();
+  const nearBin = nearestRecyclePoint(duck);
   let action = "巡湖中";
-  if (carryingCount() > 0 && dist(duck, recycle) < 3.0) action = "投放到回收点";
+  if (carryingCount() > 0 && nearBin.d < 3.0) action = "投放到回收点";
   else if (carryingCount() > 0) action = `叼着${carriedLabel(duck.carrying)} (${carryingCount()}/${duck.carryCapacity})`;
   else if (nearTrash && nearTrash.d < 1.45) action = `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
   else if (nearVisitor && nearVisitor.d < (duck.sign ? 2.45 : 1.8)) action = duck.sign ? "举牌提醒游客" : "鸣叫提醒游客";
@@ -1308,7 +1833,7 @@ function updateUi() {
   else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = "还可以再叼 1 件";
   else if (carryingCount() > 0) ui.missionText.textContent = "送到岸边绿色回收点";
   else if (state.trash.some((item) => item.urgent)) ui.missionText.textContent = "优先处理红色污染热点";
-  else if (!state.upgradeOffered && state.score >= 8) ui.missionText.textContent = `再清理 ${10 - state.score} 件解锁升级`;
+  else if (state.score >= state.targetScore - 2) ui.missionText.textContent = `再清理 ${state.targetScore - state.score} 件打开水道`;
   else if (state.trash.length > 0) ui.missionText.textContent = "定位并清理漂浮垃圾";
   else ui.missionText.textContent = "盯住岸边游客";
 }
@@ -1352,7 +1877,7 @@ function ensureAudio() {
   const quack = new Audio("assets/mallard-quack.m4a");
   quack.preload = "auto";
   quack.volume = 0.62;
-  audio = { ctx, master, swimReadyAt: 0, quack, quackFallback: false };
+  audio = { ctx, master, swimReadyAt: 0, visitorReadyAt: 0, quack, quackFallback: false };
   return audio;
 }
 
@@ -1377,6 +1902,28 @@ function playTone(freq, duration, type = "sine", gainValue = 0.18, bend = 1) {
   osc.stop(setup.ctx.currentTime + duration + 0.02);
 }
 
+function playNoiseBurst(duration = 0.08, gainValue = 0.04, filterFreq = 520) {
+  const setup = ensureAudio();
+  if (!setup) return;
+  const length = Math.max(1, Math.floor(setup.ctx.sampleRate * duration));
+  const buffer = setup.ctx.createBuffer(1, length, setup.ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+  const source = setup.ctx.createBufferSource();
+  const filter = setup.ctx.createBiquadFilter();
+  const gain = setup.ctx.createGain();
+  filter.type = "bandpass";
+  filter.frequency.value = filterFreq;
+  filter.Q.value = 2.2;
+  gain.gain.setValueAtTime(gainValue, setup.ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, setup.ctx.currentTime + duration);
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(setup.master);
+  source.start();
+}
+
 function playQuack() {
   const setup = ensureAudio();
   if (!setup || setup.quackFallback) {
@@ -1396,11 +1943,33 @@ function playQuack() {
   }
 }
 
-function playSplash(strong = false) {
+function playSplash(strong = false, speed = 1) {
   const setup = audio;
   if (!setup || setup.ctx.currentTime < setup.swimReadyAt) return;
-  setup.swimReadyAt = setup.ctx.currentTime + (strong ? 0.11 : 0.23);
-  playTone(strong ? 165 : 120, strong ? 0.08 : 0.06, "triangle", strong ? 0.09 : 0.045, 0.52);
+  setup.swimReadyAt = setup.ctx.currentTime + (strong ? 0.1 : 0.2);
+  playNoiseBurst(strong ? 0.11 : 0.075, strong ? 0.055 : 0.032, strong ? 760 : 520);
+  playTone(strong ? 190 : 128, strong ? 0.07 : 0.05, "triangle", strong ? 0.055 : 0.032, Math.max(0.42, 0.8 - speed * 0.035));
+}
+
+function playVisitorChatter(nervous = false) {
+  const setup = audio;
+  if (!setup || setup.ctx.currentTime < setup.visitorReadyAt) return;
+  setup.visitorReadyAt = setup.ctx.currentTime + 1.0;
+  playTone(nervous ? 310 : 240, 0.08, "sine", 0.018, nervous ? 1.35 : 1.12);
+  setTimeout(() => playTone(nervous ? 360 : 285, 0.06, "sine", 0.012, 0.9), 90);
+}
+
+function playVisitorWindup() {
+  const setup = audio;
+  if (!setup || setup.ctx.currentTime < setup.visitorReadyAt) return;
+  setup.visitorReadyAt = setup.ctx.currentTime + 0.55;
+  playTone(420, 0.07, "square", 0.018, 1.18);
+}
+
+function playVisitorThrow(urgent = false) {
+  const setup = audio;
+  if (!setup) return;
+  playTone(urgent ? 185 : 220, 0.09, "triangle", urgent ? 0.045 : 0.032, 0.62);
 }
 
 function playPickup() {
