@@ -30,7 +30,7 @@ python3 -m http.server 5173
 - 红色垃圾是污染热点，污染更快，但优先清理可以获得更高的清澈度回复。
 - 连续快速把垃圾送到回收点会触发连击奖励。
 - Demo 当前目标是清理 14 件垃圾；清理到 10 件时会获得一次升级，帮助完成最后阶段。
-- 鸣叫使用本地真实鸭叫素材，游泳和回收仍使用浏览器合成音效。
+- 鸣叫使用本地真实鸭叫素材；水中划水使用 `assets/water.mov` 抽出的本地片段；陆地脚步、桥面脚步和岛上脚步使用本地 WAV 样本；背景有轻微风声和鸟鸣。
 - 垃圾越多，湖水清澈度下降越快；清理垃圾和提醒游客会改变 HUD 指标，形成可展示的玩法闭环。
 
 ## 音频素材
@@ -40,3 +40,6 @@ python3 -m http.server 5173
 - 许可证：Creative Commons Attribution-Share Alike 3.0 Unported。
 - 使用方式：本 demo 使用剪辑后的本地 M4A 片段作为鸭子鸣叫。
 - 原始页面：https://commons.wikimedia.org/wiki/File:Anas_platyrhynchos_-_Mallard_-_XC62258.ogg
+- `assets/water.mov` 是水中划水声来源，`assets/water-paddle.mp3` 是从该文件抽出的浏览器兼容版本。
+- `assets/footstep-*.wav` 是本地生成的短样本，用于陆地、桥面和岛上移动脚步声；浏览器加载失败时会自动回退到合成音效。
+- `assets/ambient-breeze-birds.m4a` 转自 Wikimedia Commons 的 `Gentle breeze and birds singing.ogg`，作者 ezwa，public domain。原始页面：https://commons.wikimedia.org/wiki/File:Gentle_breeze_and_birds_singing.ogg

@@ -83,6 +83,27 @@ let audio;
 let yaw = -0.5;
 let pitch = -0.12;
 
+const movementAudioFiles = {
+  land: [
+    "assets/footstep-land-1.wav",
+    "assets/footstep-land-2.wav",
+    "assets/footstep-land-3.wav",
+    "assets/footstep-land-4.wav"
+  ],
+  island: [
+    "assets/footstep-island-1.wav",
+    "assets/footstep-island-2.wav"
+  ],
+  bridge: [
+    "assets/footstep-bridge-1.wav",
+    "assets/footstep-bridge-2.wav"
+  ],
+  water: [
+    "assets/water-paddle.mp3"
+  ]
+};
+const ambientAudioFile = "assets/ambient-breeze-birds.m4a";
+
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
@@ -2671,14 +2692,23 @@ function ensureAudio() {
   if (!AudioContext) return null;
   const ctx = new AudioContext();
   const master = ctx.createGain();
-  master.gain.value = 0.18;
+  master.gain.value = 0.22;
   master.connect(ctx.destination);
   const quack = new Audio("assets/mallard-quack.m4a");
   quack.preload = "auto";
-  quack.volume = 0.62;
+  quack.volume = 0.31;
   audio = {
     ctx,
     master,
+    movementSamples: {
+      land: [],
+      island: [],
+      bridge: [],
+      water: []
+    },
+    movementSamplesStarted: false,
+    ambientBuffer: null,
+    ambientLoadFailed: false,
     swimReadyAt: 0,
     footReadyAt: 0,
     visitorReadyAt: 0,
@@ -2686,6 +2716,8 @@ function ensureAudio() {
     quack,
     quackFallback: false
   };
+  loadMovementSamples(audio);
+  loadAmbientSample(audio);
   return audio;
 }
 
@@ -2701,6 +2733,24 @@ function resumeAudio() {
 
 function startAmbience(setup) {
   if (!setup || setup.ambienceStarted || setup.ctx.state !== "running") return;
+  if (setup.ambientBuffer) {
+    setup.ambienceStarted = true;
+    const source = setup.ctx.createBufferSource();
+    const gain = setup.ctx.createGain();
+    const lowpass = setup.ctx.createBiquadFilter();
+    source.buffer = setup.ambientBuffer;
+    source.loop = true;
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 3600;
+    gain.gain.value = 0.22;
+    source.connect(lowpass);
+    lowpass.connect(gain);
+    gain.connect(setup.master);
+    source.start();
+    setup.ambience = { source, gain, lowpass };
+    return;
+  }
+  if (!setup.ambientLoadFailed) return;
   setup.ambienceStarted = true;
   const length = setup.ctx.sampleRate * 2;
   const buffer = setup.ctx.createBuffer(1, length, setup.ctx.sampleRate);
@@ -2732,6 +2782,59 @@ function startAmbience(setup) {
   source.start();
   lfo.start();
   setup.ambience = { source, gain, lfo };
+}
+
+function loadAmbientSample(setup) {
+  fetch(ambientAudioFile)
+    .then((response) => response.arrayBuffer())
+    .then((data) => setup.ctx.decodeAudioData(data))
+    .then((buffer) => {
+      setup.ambientBuffer = buffer;
+      startAmbience(setup);
+    })
+    .catch(() => {
+      setup.ambientLoadFailed = true;
+      startAmbience(setup);
+    });
+}
+
+function loadMovementSamples(setup) {
+  if (!setup || setup.movementSamplesStarted) return;
+  setup.movementSamplesStarted = true;
+  for (const [name, urls] of Object.entries(movementAudioFiles)) {
+    Promise.all(urls.map(async (url) => {
+      const response = await fetch(url);
+      const data = await response.arrayBuffer();
+      return setup.ctx.decodeAudioData(data);
+    })).then((buffers) => {
+      setup.movementSamples[name] = buffers;
+    }).catch(() => {
+      setup.movementSamples[name] = [];
+    });
+  }
+}
+
+function playMovementSample(name, {
+  gainValue = 0.14,
+  playbackRate = 1,
+  randomRate = 0.04,
+  maxDuration = null,
+  delay = 0
+} = {}) {
+  const setup = audio;
+  const samples = setup?.movementSamples?.[name];
+  if (!setup || !samples || samples.length === 0) return false;
+  const source = setup.ctx.createBufferSource();
+  const gain = setup.ctx.createGain();
+  source.buffer = samples[Math.floor(Math.random() * samples.length)];
+  source.playbackRate.value = Math.max(0.72, playbackRate + (Math.random() * 2 - 1) * randomRate);
+  const duration = maxDuration ? Math.min(source.buffer.duration, maxDuration) : source.buffer.duration;
+  gain.gain.setValueAtTime(gainValue, setup.ctx.currentTime + delay);
+  gain.gain.exponentialRampToValueAtTime(0.001, setup.ctx.currentTime + delay + duration);
+  source.connect(gain);
+  gain.connect(setup.master);
+  source.start(setup.ctx.currentTime + delay, 0, duration);
+  return true;
 }
 
 function playTone(freq, duration, type = "sine", gainValue = 0.18, bend = 1) {
@@ -2775,7 +2878,7 @@ function playNoiseBurst(duration = 0.08, gainValue = 0.04, filterFreq = 520) {
 function playQuack() {
   const setup = ensureAudio();
   if (!setup || setup.quackFallback) {
-    playTone(380, 0.1, "triangle", 0.08, 0.74);
+    playTone(380, 0.1, "triangle", 0.04, 0.74);
     return;
   }
   try {
@@ -2783,11 +2886,11 @@ function playQuack() {
     setup.quack.currentTime = 0.65;
     setup.quack.play().catch(() => {
       setup.quackFallback = true;
-      playTone(380, 0.1, "triangle", 0.08, 0.74);
+      playTone(380, 0.1, "triangle", 0.04, 0.74);
     });
   } catch {
     setup.quackFallback = true;
-    playTone(380, 0.1, "triangle", 0.08, 0.74);
+    playTone(380, 0.1, "triangle", 0.04, 0.74);
   }
 }
 
@@ -2800,10 +2903,14 @@ function footstepInterval(surface, sprinting = false) {
 function playPaddle(strong = false, speed = 1) {
   const setup = audio;
   if (!setup || setup.ctx.currentTime < setup.swimReadyAt) return;
-  setup.swimReadyAt = setup.ctx.currentTime + (strong ? 0.095 : 0.18);
-  playNoiseBurst(strong ? 0.12 : 0.085, strong ? 0.06 : 0.035, strong ? 900 : 620);
-  playTone(strong ? 168 : 112, strong ? 0.07 : 0.055, "triangle", strong ? 0.046 : 0.026, Math.max(0.42, 0.78 - speed * 0.032));
-  setTimeout(() => playNoiseBurst(strong ? 0.048 : 0.032, strong ? 0.02 : 0.011, strong ? 1850 : 1320), strong ? 34 : 52);
+  setup.swimReadyAt = setup.ctx.currentTime + (strong ? 0.32 : 0.42);
+  const speedLift = clamp(speed / 10, 0, 0.45);
+  if (playMovementSample("water", {
+    gainValue: (strong ? 0.46 : 0.36) + speedLift * 0.053,
+    playbackRate: strong ? 1.04 : 0.9 + speedLift * 0.12,
+    randomRate: 0.025,
+    maxDuration: strong ? 0.92 : 1.08
+  })) return;
 }
 
 function playFootstep(surface = "land", sprinting = false, speed = 1) {
@@ -2811,6 +2918,26 @@ function playFootstep(surface = "land", sprinting = false, speed = 1) {
   if (!setup || setup.ctx.currentTime < setup.footReadyAt) return;
   setup.footReadyAt = setup.ctx.currentTime + footstepInterval(surface, sprinting) * 0.72;
   const loudness = sprinting ? 1.26 : 1;
+  const strideRate = sprinting ? 1.12 : 0.94 + clamp(speed / 7, 0, 0.18);
+  if (surface === "bridge") {
+    if (playMovementSample("bridge", {
+      gainValue: 1.44 * loudness,
+      playbackRate: strideRate,
+      randomRate: 0.035
+    })) return;
+  }
+  if (surface === "island") {
+    if (playMovementSample("island", {
+      gainValue: 1.6 * loudness,
+      playbackRate: strideRate,
+      randomRate: 0.04
+    })) return;
+  }
+  if (playMovementSample("land", {
+    gainValue: 1.76 * loudness,
+    playbackRate: strideRate,
+    randomRate: 0.045
+  })) return;
   if (surface === "bridge") {
     playNoiseBurst(0.045, 0.019 * loudness, 1180);
     playTone(250 + speed * 9, 0.042, "triangle", 0.022 * loudness, 0.62);
@@ -2864,13 +2991,17 @@ function playVisitorThrow(urgent = false) {
 
 function playPickup() {
   resumeAudio();
-  playTone(720, 0.08, "triangle", 0.08, 1.38);
+  playNoiseBurst(0.04, 0.56, 1450);
+  playTone(520, 0.05, "triangle", 0.32, 1.52);
+  setTimeout(() => playTone(910, 0.04, "sine", 0.16, 1.18), 38);
 }
 
 function playDrop() {
   resumeAudio();
-  playTone(260, 0.11, "sine", 0.09, 1.75);
-  setTimeout(() => playTone(520, 0.08, "triangle", 0.04, 1.22), 80);
+  playNoiseBurst(0.055, 0.72, 620);
+  playTone(180, 0.08, "triangle", 0.52, 0.62);
+  setTimeout(() => playNoiseBurst(0.045, 0.3, 1180), 52);
+  setTimeout(() => playTone(330, 0.055, "sine", 0.22, 0.72), 68);
 }
 
 function playSuccess() {
