@@ -40,6 +40,17 @@ const totalTrashTarget = totalRounds * roundTrashTarget;
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
 const bridgeCenterZ = (islandCenter.z - lake.rz * 1.02) / 2;
+const islandFootprint = { x: islandCenter.x, z: islandCenter.z, rx: 8.35, rz: 4.9 };
+const islandWalkable = { x: islandCenter.x, z: islandCenter.z, rx: 7.35, rz: 4.28 };
+const bridgeWaterSpanLength = lake.rz * 0.92;
+const bridgeHalfWidth = 1.46;
+const bridgeNorthEndZ = bridgeCenterZ - bridgeWaterSpanLength / 2;
+const bridgeSouthEndZ = islandCenter.z - islandWalkable.rz + 0.28;
+const bridgeDeckLength = bridgeSouthEndZ - bridgeNorthEndZ;
+const bridgeDeckCenterZ = (bridgeNorthEndZ + bridgeSouthEndZ) / 2;
+const bridgeApproachNorthEndZ = -lake.rz * 1.15;
+const bridgeApproachSouthEndZ = bridgeNorthEndZ;
+const duckStart = { x: -lake.rx * 0.28, z: lake.rz * 0.13 };
 const recycleSpots = [-2.45, -1.45, -0.45, 0.55, 1.55, 2.55].map((a) => ({
   x: Math.cos(a) * lake.rx * 1.19,
   z: Math.sin(a) * lake.rz * 1.19
@@ -48,12 +59,12 @@ const bridgePillarObstacles = [-lake.rz * 0.27, 0, lake.rz * 0.27].flatMap((z) =
   [-1.3, 1.3].map((x) => ({
     x: islandCenter.x + x,
     z: bridgeCenterZ + z,
-    rx: 0.46,
-    rz: 0.52
+    rx: 0.42,
+    rz: 0.5,
+    surfaces: ["water"]
   }))
 ));
 const solidObstacles = [
-  { x: islandCenter.x, z: islandCenter.z, rx: 9.0, rz: 5.0 },
   { x: stoneBoatCenter.x, z: stoneBoatCenter.z, rx: 1.35, rz: 2.9 },
   ...bridgePillarObstacles
 ];
@@ -147,8 +158,8 @@ function reset() {
     },
     cameraShake: 0,
     duck: {
-      x: oldToWorld(625, 386).x,
-      z: oldToWorld(625, 386).z,
+      x: duckStart.x,
+      z: duckStart.z,
       vx: 0,
       vz: 0,
       carrying: [],
@@ -159,8 +170,9 @@ function reset() {
       sprintDrain: 34,
       quackBoost: 0,
       sprinting: false,
+      surface: "water",
       bob: 0,
-      eyeY: duckEyeTargetY(oldToWorld(625, 386).x, oldToWorld(625, 386).z)
+      eyeY: duckEyeTargetY(duckStart.x, duckStart.z, "water")
     },
     ripples: [],
     soundWaves: [],
@@ -240,8 +252,81 @@ function lakeValue(x, z) {
   return (x * x) / (lake.rx * lake.rx) + (z * z) / (lake.rz * lake.rz);
 }
 
+function ellipseValue(x, z, area) {
+  return ((x - area.x) ** 2) / (area.rx * area.rx) + ((z - area.z) ** 2) / (area.rz * area.rz);
+}
+
+function isInsideIslandFootprint(x, z, padding = 0) {
+  const area = {
+    ...islandFootprint,
+    rx: islandFootprint.rx + padding,
+    rz: islandFootprint.rz + padding
+  };
+  return ellipseValue(x, z, area) <= 1;
+}
+
+function isOnIsland(x, z, padding = 0) {
+  const area = {
+    ...islandWalkable,
+    rx: islandWalkable.rx + padding,
+    rz: islandWalkable.rz + padding
+  };
+  return ellipseValue(x, z, area) <= 1;
+}
+
+function isOnBridge(x, z, padding = 0) {
+  const halfWidth = bridgeHalfWidth + padding;
+  return Math.abs(x - islandCenter.x) <= halfWidth
+    && z >= bridgeApproachNorthEndZ - padding
+    && z <= bridgeSouthEndZ + padding;
+}
+
 function isWater(x, z) {
-  return lakeValue(x, z) < 1;
+  return lakeValue(x, z) < 1 && !isInsideIslandFootprint(x, z, 0.08);
+}
+
+function isDuckSwimming(duck) {
+  return duck.surface === "water";
+}
+
+function canEnterBridgeFromShore(surface, from, to) {
+  return surface === "land"
+    && !isWater(from.x, from.z)
+    && Math.abs(to.x - islandCenter.x) <= bridgeHalfWidth + 0.08
+    && to.z >= bridgeApproachNorthEndZ - 0.2
+    && to.z <= bridgeApproachSouthEndZ + 0.38;
+}
+
+function landOrWaterSurface(point) {
+  return isWater(point.x, point.z) ? "water" : "land";
+}
+
+function resolveDuckSurfaceMove(surface, from, to) {
+  const toBridge = isOnBridge(to.x, to.z);
+  const toIslandTop = isOnIsland(to.x, to.z);
+  const toIslandFootprint = isInsideIslandFootprint(to.x, to.z, 0.04);
+
+  if (surface === "bridge") {
+    if (toIslandTop) return { blocked: false, surface: "island" };
+    if (toBridge) return { blocked: false, surface: "bridge" };
+    if (!isWater(to.x, to.z) && to.z <= bridgeApproachSouthEndZ + 0.28) return { blocked: false, surface: "land" };
+    return { blocked: true, surface };
+  }
+
+  if (surface === "island") {
+    if (toBridge) return { blocked: false, surface: "bridge" };
+    if (toIslandFootprint) return { blocked: false, surface: "island" };
+    return { blocked: false, surface: landOrWaterSurface(to) };
+  }
+
+  if (surface === "land") {
+    if (toBridge && canEnterBridgeFromShore(surface, from, to)) return { blocked: false, surface: "bridge" };
+    if (toIslandFootprint) return { blocked: true, surface };
+    return { blocked: false, surface: landOrWaterSurface(to) };
+  }
+
+  if (toIslandFootprint) return { blocked: true, surface };
+  return { blocked: false, surface: isWater(to.x, to.z) ? "water" : "land" };
 }
 
 function placeOnShore(point, radius = 1.14) {
@@ -262,6 +347,7 @@ function smoothstep(edge0, edge1, value) {
 }
 
 function terrainHeightAt(x, z) {
+  if (isOnIsland(x, z) || isOnBridge(x, z)) return bridgeDeckTopY;
   const r = lakeRadius(x, z);
   if (r < 0.985) return 0;
   if (r < 1.06) return smoothstep(0.985, 1.06, r) * bankTopY;
@@ -269,7 +355,10 @@ function terrainHeightAt(x, z) {
   return roadTopY;
 }
 
-function duckEyeTargetY(x, z) {
+function duckEyeTargetY(x, z, surface = "auto") {
+  if (surface === "bridge" || surface === "island") return bridgeDeckTopY + duckWaterEyeY + duckLandEyeLift;
+  if (surface === "water") return duckWaterEyeY;
+  if (surface === "auto" && isOnIsland(x, z)) return bridgeDeckTopY + duckWaterEyeY + duckLandEyeLift;
   const shoreAmount = smoothstep(0.98, 1.06, lakeRadius(x, z));
   return terrainHeightAt(x, z) + duckWaterEyeY + shoreAmount * duckLandEyeLift;
 }
@@ -286,9 +375,14 @@ function clampToLake(point, margin = 0.96) {
   };
 }
 
-function pushOutOfSolidObstacles(point) {
+function obstacleAppliesToSurface(obstacle, surface) {
+  return !obstacle.surfaces || obstacle.surfaces.includes(surface);
+}
+
+function pushOutOfSolidObstacles(point, surface = "water") {
   let result = point;
   for (const obstacle of solidObstacles) {
+    if (!obstacleAppliesToSurface(obstacle, surface)) continue;
     const rx = obstacle.rx + 0.45;
     const rz = obstacle.rz + 0.45;
     const dx = result.x - obstacle.x;
@@ -307,6 +401,24 @@ function pushOutOfSolidObstacles(point) {
     }
   }
   return result;
+}
+
+function pushOutOfIsland(point, padding = 0.28) {
+  const area = {
+    ...islandFootprint,
+    rx: islandFootprint.rx + padding,
+    rz: islandFootprint.rz + padding
+  };
+  const dx = point.x - area.x;
+  const dz = point.z - area.z;
+  const v = Math.sqrt((dx * dx) / (area.rx * area.rx) + (dz * dz) / (area.rz * area.rz));
+  if (v >= 1) return point;
+  if (!Number.isFinite(v) || v === 0) return { ...point, x: area.x, z: area.z + area.rz };
+  return {
+    ...point,
+    x: area.x + dx / v,
+    z: area.z + dz / v
+  };
 }
 
 function isSolidObstacle(x, z) {
@@ -593,28 +705,39 @@ function addLangrunChannel() {
 function addBridge() {
   const group = new THREE.Group();
   group.position.set(islandCenter.x, 0, bridgeCenterZ);
+  const deckMaterial = new THREE.MeshStandardMaterial({ color: 0xb96d42, roughness: 0.7 });
   const deck = new THREE.Mesh(
-    new THREE.BoxGeometry(3.2, 0.18, lake.rz * 0.92),
-    new THREE.MeshStandardMaterial({ color: 0xb96d42, roughness: 0.7 })
+    new THREE.BoxGeometry(3.2, 0.18, bridgeDeckLength),
+    deckMaterial
   );
-  deck.position.y = bridgeDeckTopY - 0.09;
+  deck.position.set(0, bridgeDeckTopY - 0.09, bridgeDeckCenterZ - bridgeCenterZ);
   deck.castShadow = true;
   group.add(deck);
+  const landingMaterial = new THREE.MeshStandardMaterial({ color: 0xc68a54, roughness: 0.78 });
+  const addLanding = (northZ, southZ, width, colorMaterial = landingMaterial) => {
+    const length = southZ - northZ;
+    const landing = new THREE.Mesh(new THREE.BoxGeometry(width, 0.16, length), colorMaterial);
+    landing.position.set(0, bridgeDeckTopY - 0.08, (northZ + southZ) / 2 - bridgeCenterZ);
+    landing.castShadow = true;
+    landing.receiveShadow = true;
+    group.add(landing);
+  };
+  addLanding(bridgeApproachNorthEndZ, bridgeApproachSouthEndZ, 3.8);
   const railMaterial = new THREE.MeshStandardMaterial({ color: 0x853f2d, roughness: 0.7 });
   for (const x of [-1.48, 1.48]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, lake.rz * 0.9), railMaterial);
-    rail.position.set(x, bridgeDeckTopY + 0.28, 0);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, bridgeDeckLength - 0.28), railMaterial);
+    rail.position.set(x, bridgeDeckTopY + 0.28, bridgeDeckCenterZ - bridgeCenterZ);
     rail.castShadow = true;
     group.add(rail);
   }
-  for (let z = -lake.rz * 0.38; z <= lake.rz * 0.38; z += 2.15) {
+  for (let z = bridgeNorthEndZ + 0.7; z <= bridgeSouthEndZ - 0.55; z += 2.15) {
     const post = new THREE.Mesh(
       new THREE.BoxGeometry(0.14, 0.54, 0.14),
       railMaterial
     );
     for (const x of [-1.48, 1.48]) {
       const p = post.clone();
-      p.position.set(x, bridgeDeckTopY + 0.18, z);
+      p.position.set(x, bridgeDeckTopY + 0.18, z - bridgeCenterZ);
       p.castShadow = true;
       group.add(p);
     }
@@ -1572,30 +1695,45 @@ function updateDuck(dt) {
   }
 
   const wantsSprint = (keys.has("Shift") || keys.has("shift")) && m > 0 && duck.stamina > 2;
+  const swimming = isDuckSwimming(duck);
   duck.sprinting = wantsSprint;
   if (wantsSprint) duck.stamina = Math.max(0, duck.stamina - dt * duck.sprintDrain);
-  else duck.stamina = Math.min(duck.maxStamina, duck.stamina + dt * (isWater(duck.x, duck.z) ? 20 : 28));
+  else duck.stamina = Math.min(duck.maxStamina, duck.stamina + dt * (swimming ? 20 : 28));
 
-  const baseSpeed = isWater(duck.x, duck.z) ? 7.2 : 4.2;
+  const baseSpeed = swimming ? 7.2 : 4.2;
   const speed = baseSpeed * (duck.sprinting ? 1.55 : 1);
   duck.vx += (mx * speed - duck.vx) * Math.min(1, dt * 9);
   duck.vz += (mz * speed - duck.vz) * Math.min(1, dt * 9);
   const nextX = duck.x + duck.vx * dt;
   const nextZ = duck.z + duck.vz * dt;
+  const from = { x: duck.x, z: duck.z };
+  let nextSurface = duck.surface;
+  let blocked = false;
   let p = clampToLake({ x: nextX, z: nextZ }, playableLakeMargin);
-  p = pushOutOfSolidObstacles(p);
-  p = clampToLake(p, playableLakeMargin);
-  if (p.x !== nextX || p.z !== nextZ) {
+  let move = resolveDuckSurfaceMove(duck.surface, from, p);
+  if (!move.blocked) {
+    nextSurface = move.surface;
+    p = pushOutOfSolidObstacles(p, nextSurface);
+    p = clampToLake(p, playableLakeMargin);
+    move = resolveDuckSurfaceMove(duck.surface, from, p);
+    blocked = move.blocked;
+    if (!blocked) nextSurface = move.surface;
+  } else {
+    blocked = true;
+  }
+  if (blocked) p = from;
+  if (blocked || p.x !== nextX || p.z !== nextZ) {
     duck.vx = 0;
     duck.vz = 0;
   }
   duck.x = p.x;
   duck.z = p.z;
-  duck.eyeY += (duckEyeTargetY(duck.x, duck.z) - duck.eyeY) * Math.min(1, dt * 5.2);
+  duck.surface = blocked ? duck.surface : nextSurface;
+  duck.eyeY += (duckEyeTargetY(duck.x, duck.z, duck.surface) - duck.eyeY) * Math.min(1, dt * 5.2);
   duck.bob += dt * (m > 0 ? 10 : 4);
 
   const swimSpeed = Math.hypot(duck.vx, duck.vz);
-  if (swimSpeed > 1.0 && state.time % (duck.sprinting ? 0.16 : 0.24) < dt) {
+  if (swimming && swimSpeed > 1.0 && state.time % (duck.sprinting ? 0.16 : 0.24) < dt) {
     const wakeX = duck.x - dirX * 0.58;
     const wakeZ = duck.z - dirZ * 0.58;
     addWake(wakeX, wakeZ, yaw, duck.sprinting);
@@ -1703,7 +1841,7 @@ function updateTrash(dt) {
     item.vx *= 0.985;
     item.vz *= 0.985;
     if (!isWater(item.x, item.z)) {
-      const p = clampToLake(item, 0.95);
+      const p = isInsideIslandFootprint(item.x, item.z, 0.16) ? pushOutOfIsland(item) : clampToLake(item, 0.95);
       item.x = p.x;
       item.z = p.z;
       item.vx *= -0.4;
@@ -1855,7 +1993,7 @@ function removeTrashMesh(item) {
 function updateCamera(dt) {
   const duck = state.duck;
   const shake = state.cameraShake > 0 ? (Math.random() - 0.5) * state.cameraShake * 0.16 : 0;
-  const eyeY = duck.eyeY ?? duckEyeTargetY(duck.x, duck.z);
+  const eyeY = duck.eyeY ?? duckEyeTargetY(duck.x, duck.z, duck.surface);
   camera.position.set(duck.x + shake, eyeY + Math.sin(duck.bob) * 0.025, duck.z + shake);
   camera.rotation.set(pitch, yaw, 0);
   refs.duckView.position.y = -0.78 + Math.sin(duck.bob) * 0.01;
