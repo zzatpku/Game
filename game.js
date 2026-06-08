@@ -50,6 +50,9 @@ const cleanupTrashTarget = stages.reduce((sum, stage) => sum + stage.trashTarget
 const pollutionFailThreshold = 0;
 const bossMaxHealth = 220;
 const duckMaxHealth = 100;
+const bossIdleDuration = 10;
+const bossMoveDuration = 20;
+const bossMoveSpawnTimes = [5, 15];
 const debugStage = getDebugStage();
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
@@ -227,7 +230,11 @@ function reset() {
     floatTexts: [],
     thrown: [],
     boss: null,
-    bossSpawnTimer: 0,
+    bossPhase: "idle",
+    bossPhaseTimer: bossIdleDuration,
+    bossMoveSpawned: 0,
+    bossProjectiles: [],
+    lastThrowInputAt: -Infinity,
     trash: [
       makeTrash(486, 330, 0),
       makeTrash(710, 470, 1, true),
@@ -287,7 +294,11 @@ function makeVisitor(x, y, label, timer, options = {}) {
     isBoss: options.isBoss || false,
     isMinion: options.isMinion || false,
     throwDamage: options.throwDamage ?? 8,
-    shirtColor: options.shirtColor ?? 0x315f96
+    shirtColor: options.shirtColor ?? 0x315f96,
+    patrolAngle: options.patrolAngle ?? Math.atan2(p.z, p.x),
+    patrolRadius: options.patrolRadius ?? lakeRadius(p.x, p.z),
+    patrolSpeed: options.patrolSpeed ?? 0,
+    patrolDirection: options.patrolDirection ?? 1
   };
 }
 
@@ -297,7 +308,9 @@ function makeBossVisitor() {
     health: bossMaxHealth,
     maxHealth: bossMaxHealth,
     throwDamage: 20,
-    shirtColor: 0x7d2532
+    shirtColor: 0x7d2532,
+    patrolSpeed: 0.14,
+    patrolDirection: Math.random() < 0.5 ? -1 : 1
   });
 }
 
@@ -327,7 +340,7 @@ function applyDebugStage(stageId) {
     state.awareness = Math.max(state.awareness, 32);
   }
   if (stageId >= 3) {
-    state.duck.carryCapacity = Math.max(state.duck.carryCapacity, 2);
+    state.duck.carryCapacity = Math.max(state.duck.carryCapacity, 3);
     state.duck.maxStamina = Math.max(state.duck.maxStamina, 135);
     state.duck.stamina = state.duck.maxStamina;
     state.duck.quackBoost = Math.max(state.duck.quackBoost, 18);
@@ -2050,6 +2063,55 @@ function nearestRecyclePoint(point = state.duck) {
   return { spot: best, d: bestD };
 }
 
+function aimDirection() {
+  return { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+}
+
+function aimAtBoss() {
+  if (!state.boss || state.boss.health <= 0) return { locked: false, angle: Infinity, distance: Infinity };
+  const dir = aimDirection();
+  const dx = state.boss.x - state.duck.x;
+  const dz = state.boss.z - state.duck.z;
+  const distance = Math.hypot(dx, dz);
+  if (distance <= 0.01) return { locked: true, angle: 0, distance };
+  const dot = clamp((dir.x * dx + dir.z * dz) / distance, -1, 1);
+  const angle = Math.acos(dot);
+  return { locked: angle < 0.16 && distance < lake.rx * 2.2, angle, distance };
+}
+
+function throwTrashAtBoss() {
+  if (currentStage().mode !== "boss" || !state.boss || state.boss.health <= 0 || carryingCount() === 0) return false;
+  const aim = aimAtBoss();
+  if (!aim.locked) {
+    addText("准星对准重点游客", state.duck.x, state.duck.z, "#b33327");
+    addSoundWave(state.duck.x, state.duck.z, 1.6, 0xb33327);
+    return true;
+  }
+  const item = state.duck.carrying.shift();
+  const damage = item.urgent ? 44 : 30;
+  state.bossProjectiles.push({
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()),
+    item,
+    typeIndex: item.typeIndex,
+    urgent: item.urgent,
+    x: state.duck.x,
+    z: state.duck.z,
+    y: state.duck.eyeY,
+    sx: state.duck.x,
+    sz: state.duck.z,
+    sy: state.duck.eyeY,
+    tx: state.boss.x,
+    tz: state.boss.z,
+    ty: terrainHeightAt(state.boss.x, state.boss.z) + 1.2,
+    t: 0,
+    damage,
+    mesh: null
+  });
+  addText("投掷垃圾", state.duck.x, state.duck.z, "#315f96");
+  playVisitorThrow(item.urgent);
+  return true;
+}
+
 function visitorThrowDelay() {
   const stage = currentStage();
   const round = stage.id;
@@ -2076,6 +2138,12 @@ function carriedLabel(items) {
 
 function currentStage() {
   return stages[Math.max(0, Math.min(stages.length - 1, (state?.round || 1) - 1))];
+}
+
+function bossPhaseLabel() {
+  if (currentStage().mode !== "boss") return "";
+  const seconds = Math.max(0, Math.ceil(state.bossPhaseTimer));
+  return state.bossPhase === "moving" ? `移动 ${seconds}s` : `停留 ${seconds}s`;
 }
 
 function completedTrashBeforeStage(stageId = state.round) {
@@ -2124,24 +2192,26 @@ function enterStage(stageId, options = {}) {
 
 function setupBossStage() {
   clearThrownProjectiles();
-  state.trash = [];
+  clearBossProjectiles();
+  state.trash = makeBossStageTrash();
   state.boss = makeBossVisitor();
-  state.bossSpawnTimer = 3.5;
+  state.bossPhase = "idle";
+  state.bossPhaseTimer = bossIdleDuration;
+  state.bossMoveSpawned = 0;
   state.duck.health = state.duck.maxHealth;
-  state.visitors = [
-    state.boss,
-    makeBossMinion(0),
-    makeBossMinion(1),
-    makeBossMinion(2),
-    makeBossMinion(3),
-    makeBossMinion(4),
-    makeBossMinion(5)
-  ];
+  state.visitors = [state.boss];
   for (const mesh of refs.visitors.values()) {
     dynamic.remove(mesh);
     disposeObject(mesh);
   }
   refs.visitors.clear();
+}
+
+function makeBossStageTrash() {
+  return Array.from({ length: 7 }, (_, index) => {
+    const point = randomWaterTarget();
+    return makeTrashWorld(point.x, point.z, index % trashTypes.length, index === 1 || index === 5);
+  });
 }
 
 function clearThrownProjectiles() {
@@ -2152,6 +2222,16 @@ function clearThrownProjectiles() {
     refs.thrown.delete(item.mesh);
   }
   state.thrown = [];
+}
+
+function clearBossProjectiles() {
+  for (const item of state.bossProjectiles) {
+    if (!item.mesh) continue;
+    dynamic.remove(item.mesh);
+    disposeObject(item.mesh);
+    refs.thrown.delete(item.mesh);
+  }
+  state.bossProjectiles = [];
 }
 
 function performAction() {
@@ -2206,14 +2286,12 @@ function performAction() {
   for (const v of state.visitors) {
     if (dist(duck, v) <= radius) {
       if (v.isBoss) {
-        const damage = (state.duck.sign ? 17 : 12) + state.duck.quackBoost * 0.08;
-        v.health = Math.max(0, v.health - damage);
-        v.cooldown = Math.max(v.cooldown, 0.75);
+        v.cooldown = Math.max(v.cooldown, 1.2);
         v.shame = 2.2;
         v.throwWindup = 0;
         v.nextTarget = null;
         warnedCount += 1;
-        addText(`重点游客 -${Math.round(damage)}`, v.x, v.z, "#b33327");
+        addText("短暂压制", v.x, v.z, "#b33327");
         continue;
       }
       v.cooldown = Math.max(v.cooldown, (state.duck.sign ? 40 : 28) + state.duck.quackBoost * 0.1);
@@ -2234,6 +2312,25 @@ function performAction() {
   } else {
     addText("嘎", duck.x, duck.z, "#315f96");
   }
+}
+
+function performThrowAction(event) {
+  if (event && event.button !== 0) return false;
+  if (!state || state.paused || state.result !== "playing") return false;
+  if (currentStage().mode !== "boss" || carryingCount() === 0) return false;
+  if (state.time - state.lastThrowInputAt < 0.16) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    return true;
+  }
+  resumeAudio();
+  const handled = throwTrashAtBoss();
+  if (handled) {
+    state.lastThrowInputAt = state.time;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+  }
+  return handled;
 }
 
 function update(dt) {
@@ -2269,6 +2366,7 @@ function update(dt) {
   updateBossPressure(dt);
   updateVisitors(dt);
   updateThrown(dt);
+  updateBossProjectiles(dt);
   updateTrash(dt);
   updateParticles(dt);
   syncScene();
@@ -2279,6 +2377,7 @@ function update(dt) {
 function openChannelAndWin() {
   if (state.result === "won") return;
   clearThrownProjectiles();
+  clearBossProjectiles();
   state.trash = [];
   state.round = totalStages;
   state.result = "won";
@@ -2369,25 +2468,68 @@ function updateDuck(dt) {
 
 function updateBossPressure(dt) {
   if (currentStage().mode !== "boss" || !state.boss || state.boss.health <= 0) return;
-  state.bossSpawnTimer -= dt;
+  state.bossPhaseTimer -= dt;
+  if (state.bossPhase === "idle") {
+    if (state.bossPhaseTimer <= 0) {
+      state.bossPhase = "moving";
+      state.bossPhaseTimer = bossMoveDuration;
+      state.bossMoveSpawned = 0;
+      state.boss.patrolAngle = Math.atan2(state.boss.z, state.boss.x);
+      state.boss.patrolRadius = lakeRadius(state.boss.x, state.boss.z);
+      addText("重点游客开始移动", state.boss.x, state.boss.z, "#b33327");
+    }
+    return;
+  }
+
+  const elapsed = bossMoveDuration - state.bossPhaseTimer;
+  while (state.bossMoveSpawned < bossMoveSpawnTimes.length && elapsed >= bossMoveSpawnTimes[state.bossMoveSpawned]) {
+    spawnBossMinion();
+    state.bossMoveSpawned += 1;
+  }
+  if (state.bossPhaseTimer <= 0) {
+    state.bossPhase = "idle";
+    state.bossPhaseTimer = bossIdleDuration;
+    state.bossMoveSpawned = 0;
+    addText("重点游客停下观望", state.boss.x, state.boss.z, "#315f96");
+  }
+}
+
+function spawnBossMinion() {
   const minionCount = state.visitors.filter((visitor) => visitor.isMinion).length;
-  if (state.bossSpawnTimer > 0 || minionCount >= 28) return;
   const minion = makeBossMinion(minionCount);
-  minion.timer = Math.min(minion.timer, visitorThrowDelay() * 0.45);
+  minion.timer = Math.min(minion.timer, visitorThrowDelay() * 0.7);
   state.visitors.push(minion);
-  state.bossSpawnTimer = Math.max(2.4, 7.2 - minionCount * 0.18 - (1 - state.boss.health / state.boss.maxHealth) * 2.6);
   addText("又有跟随游客加入", minion.x, minion.z, "#8a5a2f");
+}
+
+function updateBossMovement(visitor, dt) {
+  if (state.bossPhase !== "moving") return;
+  const healthPressure = 1 - visitor.health / visitor.maxHealth;
+  visitor.patrolAngle += dt * visitor.patrolSpeed * visitor.patrolDirection * (1.0 + healthPressure * 0.65);
+  visitor.patrolRadius = clamp(visitor.patrolRadius || lakeRadius(visitor.x, visitor.z), 1.11, playableLakeMargin);
+  const moved = placeOnShore({
+    x: Math.cos(visitor.patrolAngle) * lake.rx * visitor.patrolRadius,
+    z: Math.sin(visitor.patrolAngle) * lake.rz * visitor.patrolRadius
+  }, 1.13);
+  visitor.x = moved.x;
+  visitor.z = moved.z;
+  visitor.baseX = moved.x;
+  visitor.baseZ = moved.z;
 }
 
 function updateVisitors(dt) {
   for (const visitor of state.visitors) {
-    visitor.drift += dt;
-    const drifted = placeOnShore({
-      x: visitor.baseX + Math.cos(visitor.drift * 0.7) * 0.2,
-      z: visitor.baseZ + Math.sin(visitor.drift * 0.9) * 0.14
-    }, 1.13);
-    visitor.x = drifted.x;
-    visitor.z = drifted.z;
+    if (visitor.isBoss) {
+      updateBossMovement(visitor, dt);
+    } else {
+      visitor.drift += dt;
+      const drifted = placeOnShore({
+        x: visitor.baseX + Math.cos(visitor.drift * 0.7) * 0.2,
+        z: visitor.baseZ + Math.sin(visitor.drift * 0.9) * 0.14
+      }, 1.13);
+      visitor.x = drifted.x;
+      visitor.z = drifted.z;
+    }
     visitor.cooldown = Math.max(0, visitor.cooldown - dt);
     visitor.shame = Math.max(0, visitor.shame - dt);
 
@@ -2469,6 +2611,53 @@ function updateThrown(dt) {
   }
   state.thrown = state.thrown.filter((item) => item.t < 1);
   state.cameraShake = Math.max(0, state.cameraShake - dt);
+}
+
+function updateBossProjectiles(dt) {
+  for (const item of state.bossProjectiles) {
+    item.t += dt * 4.2;
+    const t = Math.min(1, item.t);
+    const arc = Math.sin(t * Math.PI) * 1.7;
+    item.x = item.sx + (item.tx - item.sx) * t;
+    item.z = item.sz + (item.tz - item.sz) * t;
+    item.y = item.sy + (item.ty - item.sy) * t + arc;
+    if (!item.mesh) {
+      item.mesh = createTrashMesh({ ...item, type: trashTypes[item.typeIndex] });
+      item.mesh.userData.ring.visible = false;
+      refs.thrown.add(item.mesh);
+    }
+    item.mesh.position.set(item.x, item.y, item.z);
+    item.mesh.rotation.set(item.t * 5, item.t * 10, item.t * 4);
+    if (t >= 1) {
+      const boss = state.boss;
+      const hit = boss && boss.health > 0 && dist({ x: item.x, z: item.z }, boss) < 2.35;
+      if (hit) {
+        boss.health = Math.max(0, boss.health - item.damage);
+        boss.cooldown = Math.max(boss.cooldown, 1.0);
+        boss.shame = 2.0;
+        boss.throwWindup = 0;
+        boss.nextTarget = null;
+        addText(`命中 -${item.damage}`, boss.x, boss.z, item.urgent ? "#b33327" : "#315f96");
+        addDroplets(boss.x, boss.z, item.urgent ? 0xffb3a8 : 0xe8fbff);
+        state.cameraShake = Math.max(state.cameraShake, 0.22);
+        playPickup();
+        maybeAdvanceRound();
+      } else {
+        const dropPoint = isWater(item.x, item.z) ? item : randomWaterTarget();
+        state.trash.push(makeTrashWorld(dropPoint.x, dropPoint.z, item.typeIndex, item.urgent));
+        addRipple(dropPoint.x, dropPoint.z, 0xd24d3f);
+        addText("落空", dropPoint.x, dropPoint.z, "#b33327");
+      }
+    }
+  }
+  for (const item of state.bossProjectiles.filter((item) => item.t >= 1)) {
+    if (item.mesh) {
+      dynamic.remove(item.mesh);
+      disposeObject(item.mesh);
+      refs.thrown.delete(item.mesh);
+    }
+  }
+  state.bossProjectiles = state.bossProjectiles.filter((item) => item.t < 1);
 }
 
 function makeTrashWorld(x, z, typeIndex, urgent = false) {
@@ -2794,28 +2983,36 @@ function updateUi() {
   const nearTrash = nearestTrash();
   const nearVisitor = nearestVisitor();
   const nearBin = nearestRecyclePoint(duck);
+  const bossAim = inBossStage ? aimAtBoss() : null;
   let action = "巡湖中";
   if (carryingCount() > 0 && nearBin.d < 3.0) action = "投放到回收点";
+  else if (inBossStage && carryingCount() > 0) action = bossAim.locked ? "左键投掷重点游客" : "准星瞄准重点游客";
   else if (carryingCount() > 0) action = `叼着${carriedLabel(duck.carrying)} (${carryingCount()}/${duck.carryCapacity})`;
   else if (nearTrash && nearTrash.d < 1.45) action = `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
-  else if (nearVisitor && nearVisitor.d < (nearVisitor.visitor?.isBoss ? 4.8 : (duck.sign ? 2.45 : 1.8))) action = nearVisitor.visitor?.isBoss ? "鸣叫压制重点游客" : (duck.sign ? "举牌提醒游客" : "鸣叫提醒游客");
+  else if (nearVisitor && nearVisitor.d < (nearVisitor.visitor?.isBoss ? 4.8 : (duck.sign ? 2.45 : 1.8))) action = nearVisitor.visitor?.isBoss ? "鸣叫打断重点游客" : (duck.sign ? "举牌提醒游客" : "鸣叫提醒游客");
   ui.actionText.textContent = action;
-  ui.actionButton.textContent = action === "巡湖中" ? "鸣叫" : "行动";
+  ui.actionButton.textContent = inBossStage && carryingCount() > 0 && nearBin.d >= 3.0 ? "鸣叫" : (action === "巡湖中" ? "鸣叫" : "行动");
 
   if (nearTrash) {
     const p = worldToOld(nearTrash.item);
     ui.nearestText.textContent = `${nearTrash.item.urgent ? "污染热点 " : ""}${regionName(nearTrash.item)}  X${p.x} Y${p.y}`;
+  } else if (inBossStage && state.boss) {
+    ui.nearestText.textContent = bossAim.locked ? "准星已锁定重点游客" : "移动视角寻找重点游客";
   } else {
     ui.nearestText.textContent = "未发现";
   }
 
   if (!duck.sign && state.score >= 4) ui.missionText.textContent = "告示牌已解锁";
   else if (state.combo > 1) ui.missionText.textContent = `连击中: ${state.combo} 次`;
-  else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = "还可以再叼 1 件";
-  else if (carryingCount() > 0) ui.missionText.textContent = "送到岸边绿色回收点";
+  else if (carryingCount() > 0 && nearBin.d < 3.0) ui.missionText.textContent = "Space 投放到垃圾桶";
+  else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = `还可以再叼 ${state.duck.carryCapacity - carryingCount()} 件`;
+  else if (carryingCount() > 0) ui.missionText.textContent = inBossStage ? "左键攻击，或送到垃圾桶清理" : "送到岸边绿色回收点";
   else if (stage.mode === "boss") {
     const minions = state.visitors.filter((visitor) => visitor.isMinion).length;
-    ui.missionText.textContent = `赶走重点游客，跟随游客 ${minions} 人`;
+    const phase = bossPhaseLabel();
+    ui.missionText.textContent = carryingCount() > 0
+      ? `${phase}: 左键投掷或先保洁，跟随游客 ${minions} 人`
+      : `${phase}: 捡垃圾作弹药，跟随游客 ${minions} 人`;
   }
   else if (state.trash.some((item) => item.urgent)) ui.missionText.textContent = "优先处理红色污染热点";
   else if (roundProgress >= stage.trashTarget - 2) {
@@ -2831,7 +3028,7 @@ function updatePauseMenu() {
   const stage = currentStage();
   const roundProgress = currentRoundProgress();
   ui.pauseRoundText.textContent = `第 ${state.round} / ${totalStages} 阶段`;
-  ui.pauseRoundProgressText.textContent = stage.mode === "boss" ? `Boss ${roundProgress}%` : `${roundProgress} / ${stage.trashTarget}`;
+  ui.pauseRoundProgressText.textContent = stage.mode === "boss" ? `Boss ${roundProgress}% ${bossPhaseLabel()}` : `${roundProgress} / ${stage.trashTarget}`;
   ui.pauseTotalText.textContent = `${state.score} / ${cleanupTrashTarget}`;
   ui.pausePressureText.textContent = stage.pressureLabel;
 }
@@ -3265,9 +3462,10 @@ window.addEventListener("keyup", (event) => {
   keys.delete(key);
 });
 
-canvas.addEventListener("click", () => {
+canvas.addEventListener("click", (event) => {
   resumeAudio();
   if (state?.paused) return;
+  if (performThrowAction(event)) return;
   requestPointerLockSafely();
 });
 
@@ -3280,6 +3478,7 @@ window.addEventListener("mousemove", (event) => {
 canvas.addEventListener("pointerdown", (event) => {
   resumeAudio();
   if (state?.paused) return;
+  if (performThrowAction(event)) return;
   pointer.dragging = true;
   pointer.x = event.clientX;
   pointer.y = event.clientY;

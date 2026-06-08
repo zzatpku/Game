@@ -220,15 +220,37 @@ canvas:active {
 }
 
 .reticle {
+  display: block;
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 9px;
-  height: 9px;
-  border: 2px solid rgba(255, 255, 251, 0.68);
+  width: 26px;
+  height: 26px;
+  border: 2px solid rgba(255, 255, 251, 0.72);
   border-radius: 999px;
-  box-shadow: 0 0 0 1px rgba(22, 48, 46, 0.24), 0 0 14px rgba(255, 255, 251, 0.38);
+  box-shadow: 0 0 0 1px rgba(22, 48, 46, 0.34), 0 0 14px rgba(255, 255, 251, 0.42);
   transform: translate(-50%, -50%);
+}
+
+.reticle::before,
+.reticle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(255, 255, 251, 0.86);
+  box-shadow: 0 0 0 1px rgba(22, 48, 46, 0.24);
+  transform: translate(-50%, -50%);
+}
+
+.reticle::before {
+  width: 42px;
+  height: 2px;
+}
+
+.reticle::after {
+  width: 2px;
+  height: 42px;
 }
 
 @keyframes waterSweep {
