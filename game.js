@@ -2082,13 +2082,15 @@ function aimAtBoss() {
 function throwTrashAtBoss() {
   if (currentStage().mode !== "boss" || !state.boss || state.boss.health <= 0 || carryingCount() === 0) return false;
   const aim = aimAtBoss();
-  if (!aim.locked) {
-    addText("准星对准重点游客", state.duck.x, state.duck.z, "#b33327");
-    addSoundWave(state.duck.x, state.duck.z, 1.6, 0xb33327);
-    return true;
-  }
   const item = state.duck.carrying.shift();
   const damage = item.urgent ? 44 : 30;
+  const dir = aimDirection();
+  const throwDistance = Math.min(lake.rx * 1.85, Math.max(18, aim.distance || lake.rx * 0.7));
+  const waterTarget = clampToLake({
+    x: state.duck.x + dir.x * throwDistance,
+    z: state.duck.z + dir.z * throwDistance
+  }, 0.94);
+  const target = aim.locked ? state.boss : waterTarget;
   state.bossProjectiles.push({
     id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()),
     item,
@@ -2100,14 +2102,15 @@ function throwTrashAtBoss() {
     sx: state.duck.x,
     sz: state.duck.z,
     sy: state.duck.eyeY,
-    tx: state.boss.x,
-    tz: state.boss.z,
-    ty: terrainHeightAt(state.boss.x, state.boss.z) + 1.2,
+    tx: target.x,
+    tz: target.z,
+    ty: aim.locked ? terrainHeightAt(target.x, target.z) + 1.2 : 0.28,
     t: 0,
     damage,
+    aimed: aim.locked,
     mesh: null
   });
-  addText("投掷垃圾", state.duck.x, state.duck.z, "#315f96");
+  addText(aim.locked ? "投掷垃圾" : "投偏了", state.duck.x, state.duck.z, aim.locked ? "#315f96" : "#b33327");
   playVisitorThrow(item.urgent);
   return true;
 }
@@ -2617,7 +2620,7 @@ function updateBossProjectiles(dt) {
   for (const item of state.bossProjectiles) {
     item.t += dt * 4.2;
     const t = Math.min(1, item.t);
-    const arc = Math.sin(t * Math.PI) * 1.7;
+    const arc = Math.sin(t * Math.PI) * (item.aimed ? 1.7 : 2.1);
     item.x = item.sx + (item.tx - item.sx) * t;
     item.z = item.sz + (item.tz - item.sz) * t;
     item.y = item.sy + (item.ty - item.sy) * t + arc;
@@ -2630,9 +2633,10 @@ function updateBossProjectiles(dt) {
     item.mesh.rotation.set(item.t * 5, item.t * 10, item.t * 4);
     if (t >= 1) {
       const boss = state.boss;
-      const hit = boss && boss.health > 0 && dist({ x: item.x, z: item.z }, boss) < 2.35;
+      const hit = item.aimed && boss && boss.health > 0 && dist({ x: item.x, z: item.z }, boss) < 2.35;
       if (hit) {
         boss.health = Math.max(0, boss.health - item.damage);
+        state.clarity = Math.min(100, state.clarity + (item.urgent ? 4.5 : 2.8));
         boss.cooldown = Math.max(boss.cooldown, 1.0);
         boss.shame = 2.0;
         boss.throwWindup = 0;
@@ -2643,9 +2647,12 @@ function updateBossProjectiles(dt) {
         playPickup();
         maybeAdvanceRound();
       } else {
-        const dropPoint = isWater(item.x, item.z) ? item : randomWaterTarget();
+        let dropPoint = { x: item.x, z: item.z };
+        if (!isWater(dropPoint.x, dropPoint.z)) dropPoint = clampToLake(dropPoint, 0.92);
+        if (!isWater(dropPoint.x, dropPoint.z)) dropPoint = randomWaterTarget();
         state.trash.push(makeTrashWorld(dropPoint.x, dropPoint.z, item.typeIndex, item.urgent));
         addRipple(dropPoint.x, dropPoint.z, 0xd24d3f);
+        addDroplets(dropPoint.x, dropPoint.z, item.urgent ? 0xffb3a8 : 0xe8fbff);
         addText("落空", dropPoint.x, dropPoint.z, "#b33327");
       }
     }
@@ -2986,7 +2993,7 @@ function updateUi() {
   const bossAim = inBossStage ? aimAtBoss() : null;
   let action = "巡湖中";
   if (carryingCount() > 0 && nearBin.d < 3.0) action = "投放到回收点";
-  else if (inBossStage && carryingCount() > 0) action = bossAim.locked ? "左键投掷重点游客" : "准星瞄准重点游客";
+  else if (inBossStage && carryingCount() > 0) action = bossAim.locked ? "左键投掷重点游客" : "左键投掷会落水";
   else if (carryingCount() > 0) action = `叼着${carriedLabel(duck.carrying)} (${carryingCount()}/${duck.carryCapacity})`;
   else if (nearTrash && nearTrash.d < 1.45) action = `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
   else if (nearVisitor && nearVisitor.d < (nearVisitor.visitor?.isBoss ? 4.8 : (duck.sign ? 2.45 : 1.8))) action = nearVisitor.visitor?.isBoss ? "鸣叫打断重点游客" : (duck.sign ? "举牌提醒游客" : "鸣叫提醒游客");
@@ -2997,7 +3004,7 @@ function updateUi() {
     const p = worldToOld(nearTrash.item);
     ui.nearestText.textContent = `${nearTrash.item.urgent ? "污染热点 " : ""}${regionName(nearTrash.item)}  X${p.x} Y${p.y}`;
   } else if (inBossStage && state.boss) {
-    ui.nearestText.textContent = bossAim.locked ? "准星已锁定重点游客" : "移动视角寻找重点游客";
+    ui.nearestText.textContent = bossAim.locked ? "准星已锁定重点游客" : "未锁定会落回湖里";
   } else {
     ui.nearestText.textContent = "未发现";
   }
@@ -3006,7 +3013,7 @@ function updateUi() {
   else if (state.combo > 1) ui.missionText.textContent = `连击中: ${state.combo} 次`;
   else if (carryingCount() > 0 && nearBin.d < 3.0) ui.missionText.textContent = "Space 投放到垃圾桶";
   else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = `还可以再叼 ${state.duck.carryCapacity - carryingCount()} 件`;
-  else if (carryingCount() > 0) ui.missionText.textContent = inBossStage ? "左键攻击，或送到垃圾桶清理" : "送到岸边绿色回收点";
+  else if (carryingCount() > 0) ui.missionText.textContent = inBossStage ? "左键投掷；命中不返湖，落空会回湖" : "送到岸边绿色回收点";
   else if (stage.mode === "boss") {
     const minions = state.visitors.filter((visitor) => visitor.isMinion).length;
     const phase = bossPhaseLabel();
