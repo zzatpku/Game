@@ -8,6 +8,12 @@ const ui = {
   awarenessBar: document.querySelector("#awarenessBar"),
   staminaValue: document.querySelector("#staminaValue"),
   staminaBar: document.querySelector("#staminaBar"),
+  duckHealthMeter: document.querySelector("#duckHealthMeter"),
+  duckHealthValue: document.querySelector("#duckHealthValue"),
+  duckHealthBar: document.querySelector("#duckHealthBar"),
+  bossHealthMeter: document.querySelector("#bossHealthMeter"),
+  bossHealthValue: document.querySelector("#bossHealthValue"),
+  bossHealthBar: document.querySelector("#bossHealthBar"),
   scorePill: document.querySelector("#scorePill"),
   actionText: document.querySelector("#actionText"),
   nearestText: document.querySelector("#nearestText"),
@@ -34,9 +40,17 @@ const islandLiftY = 0.38;
 const bridgeDeckTopY = 0.66;
 const duckWaterEyeY = 0.34;
 const duckLandEyeLift = 0.04;
-const totalRounds = 5;
-const roundTrashTarget = 8;
-const totalTrashTarget = totalRounds * roundTrashTarget;
+const stages = [
+  { id: 1, name: "第一阶段", mode: "cleanup", trashTarget: 5, pressureLabel: "普通", throwDelayScale: 1 },
+  { id: 2, name: "第二阶段", mode: "cleanup", trashTarget: 15, pressureLabel: "加快", throwDelayScale: 0.54 },
+  { id: 3, name: "第三阶段", mode: "boss", trashTarget: 0, pressureLabel: "重点游客", throwDelayScale: 0.3 }
+];
+const totalStages = stages.length;
+const cleanupTrashTarget = stages.reduce((sum, stage) => sum + stage.trashTarget, 0);
+const pollutionFailThreshold = 0;
+const bossMaxHealth = 220;
+const duckMaxHealth = 100;
+const debugStage = getDebugStage();
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
 const bridgeCenterZ = (islandCenter.z - lake.rz * 1.02) / 2;
@@ -175,9 +189,9 @@ function reset() {
     combo: 0,
     comboTimer: 0,
     score: 0,
-    targetScore: totalTrashTarget,
+    targetScore: cleanupTrashTarget,
     round: 1,
-    roundTarget: roundTrashTarget,
+    roundTarget: stages[0].trashTarget,
     result: "playing",
     paused: false,
     pendingRound: null,
@@ -198,6 +212,8 @@ function reset() {
       sign: false,
       stamina: 100,
       maxStamina: 100,
+      health: duckMaxHealth,
+      maxHealth: duckMaxHealth,
       sprintDrain: 34,
       quackBoost: 0,
       sprinting: false,
@@ -210,6 +226,8 @@ function reset() {
     soundWaves: [],
     floatTexts: [],
     thrown: [],
+    boss: null,
+    bossSpawnTimer: 0,
     trash: [
       makeTrash(486, 330, 0),
       makeTrash(710, 470, 1, true),
@@ -223,7 +241,8 @@ function reset() {
       makeVisitor(258, 546, "散步游客", 14.1)
     ]
   };
-  const firstTarget = state.trash.find((item) => item.urgent) || state.trash[0];
+  if (debugStage) applyDebugStage(debugStage);
+  const firstTarget = state.boss || state.trash.find((item) => item.urgent) || state.trash[0];
   yaw = yawTo(firstTarget);
   ui.upgradeModal.hidden = true;
   ui.pauseMenu.hidden = true;
@@ -247,7 +266,7 @@ function makeTrash(x, y, typeIndex, urgent = false) {
   };
 }
 
-function makeVisitor(x, y, label, timer) {
+function makeVisitor(x, y, label, timer, options = {}) {
   const p = placeOnShore(oldToWorld(x, y), 1.14);
   return {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()),
@@ -262,8 +281,58 @@ function makeVisitor(x, y, label, timer) {
     throwWindup: 0,
     nextTarget: null,
     talkTimer: 3 + Math.random() * 5,
-    drift: Math.random() * Math.PI * 2
+    drift: Math.random() * Math.PI * 2,
+    health: options.health ?? 0,
+    maxHealth: options.maxHealth ?? 0,
+    isBoss: options.isBoss || false,
+    isMinion: options.isMinion || false,
+    throwDamage: options.throwDamage ?? 8,
+    shirtColor: options.shirtColor ?? 0x315f96
   };
+}
+
+function makeBossVisitor() {
+  return makeVisitor(930, 150, "重点游客", 2.8, {
+    isBoss: true,
+    health: bossMaxHealth,
+    maxHealth: bossMaxHealth,
+    throwDamage: 20,
+    shirtColor: 0x7d2532
+  });
+}
+
+function makeBossMinion(index = 0) {
+  const angle = index * 1.72 + Math.random() * 0.42;
+  const x = oldLake.cx + Math.cos(angle) * oldLake.rx * (0.9 + Math.random() * 0.18);
+  const y = oldLake.cy + Math.sin(angle) * oldLake.ry * (0.82 + Math.random() * 0.2);
+  return makeVisitor(x, y, "跟随游客", 1.8 + Math.random() * 2.4, {
+    isMinion: true,
+    throwDamage: 10,
+    shirtColor: 0x8a5a2f
+  });
+}
+
+function getDebugStage() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("debugStage") || params.get("stage");
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return stages.some((stage) => stage.id === parsed) ? parsed : null;
+}
+
+function applyDebugStage(stageId) {
+  state.score = completedTrashBeforeStage(stageId);
+  if (state.score >= 4) {
+    state.duck.sign = true;
+    state.awareness = Math.max(state.awareness, 32);
+  }
+  if (stageId >= 3) {
+    state.duck.carryCapacity = Math.max(state.duck.carryCapacity, 2);
+    state.duck.maxStamina = Math.max(state.duck.maxStamina, 135);
+    state.duck.stamina = state.duck.maxStamina;
+    state.duck.quackBoost = Math.max(state.duck.quackBoost, 18);
+  }
+  enterStage(stageId, { silent: true });
 }
 
 function oldToWorld(x, y) {
@@ -1798,7 +1867,7 @@ function createTrashMesh(item) {
 function createVisitorMesh(visitor) {
   const group = new THREE.Group();
   const skin = new THREE.MeshStandardMaterial({ color: 0xf0c59b, roughness: 0.75 });
-  const shirt = new THREE.MeshStandardMaterial({ color: 0x315f96, roughness: 0.72 });
+  const shirt = new THREE.MeshStandardMaterial({ color: visitor.shirtColor || 0x315f96, roughness: 0.72 });
   const pants = new THREE.MeshStandardMaterial({ color: 0x273c3d, roughness: 0.8 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.58, 0.2), shirt);
   body.position.y = 0.74;
@@ -1816,7 +1885,28 @@ function createVisitorMesh(visitor) {
   armR.rotation.z = 0.55;
   for (const part of [body, head, legL, legR, armL, armR]) part.castShadow = true;
   group.add(body, head, legL, legR, armL, armR);
-  group.userData = { shirt, arms: [armL, armR] };
+  let healthFill = null;
+  if (visitor.isBoss) {
+    group.scale.setScalar(1.42);
+    const badge = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.2, 0.1, 5),
+      new THREE.MeshStandardMaterial({ color: 0xd24d3f, roughness: 0.62 })
+    );
+    badge.position.set(0, 1.42, 0);
+    badge.rotation.y = Math.PI / 5;
+    const healthBack = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.92, 0.09),
+      new THREE.MeshBasicMaterial({ color: 0x301818, transparent: true, opacity: 0.82, depthWrite: false })
+    );
+    healthBack.position.set(0, 1.72, 0.03);
+    healthFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.86, 0.045),
+      new THREE.MeshBasicMaterial({ color: 0xd24d3f, transparent: true, opacity: 0.95, depthWrite: false })
+    );
+    healthFill.position.set(0, 1.72, 0.04);
+    group.add(badge, healthBack, healthFill);
+  }
+  group.userData = { shirt, arms: [armL, armR], healthFill };
   dynamic.add(group);
   return group;
 }
@@ -1961,12 +2051,13 @@ function nearestRecyclePoint(point = state.duck) {
 }
 
 function visitorThrowDelay() {
-  const round = state?.round || 1;
+  const stage = currentStage();
+  const round = stage.id;
   const base = 15.5 - (round - 1) * 2.25;
   const variance = Math.max(3.5, 9.5 - (round - 1) * 1.15);
-  const awarenessDelay = (state?.awareness || 0) * Math.max(0.07, 0.15 - (round - 1) * 0.018);
+  const awarenessDelay = (state?.awareness || 0) * Math.max(0.04, 0.15 - (round - 1) * 0.018);
   const voiceDelay = (state?.upgradeLevels?.voice || 0) * 2.2;
-  return Math.max(4.2, base + Math.random() * variance + awarenessDelay + voiceDelay);
+  return Math.max(stage.mode === "boss" ? 2.8 : 4.2, (base + Math.random() * variance + awarenessDelay + voiceDelay) * stage.throwDelayScale);
 }
 
 function carryingCount() {
@@ -1983,27 +2074,84 @@ function carriedLabel(items) {
   return `${items.length} 件垃圾`;
 }
 
+function currentStage() {
+  return stages[Math.max(0, Math.min(stages.length - 1, (state?.round || 1) - 1))];
+}
+
+function completedTrashBeforeStage(stageId = state.round) {
+  return stages
+    .filter((stage) => stage.id < stageId)
+    .reduce((sum, stage) => sum + stage.trashTarget, 0);
+}
+
 function currentRoundProgress() {
-  return Math.min(roundTrashTarget, Math.max(0, state.score - (state.round - 1) * roundTrashTarget));
+  const stage = currentStage();
+  if (stage.mode === "boss") return Math.max(0, Math.round((state.boss?.health || 0) / (state.boss?.maxHealth || bossMaxHealth) * 100));
+  return Math.min(stage.trashTarget, Math.max(0, state.score - completedTrashBeforeStage(stage.id)));
 }
 
 function maybeAdvanceRound() {
   if (state.result !== "playing") return;
-  if (state.score >= totalTrashTarget) {
-    openChannelAndWin();
+  const stage = currentStage();
+  if (stage.mode === "boss") {
+    if (state.boss && state.boss.health <= 0) openChannelAndWin();
     return;
   }
-  const roundCompleteScore = state.round * roundTrashTarget;
+  const roundCompleteScore = completedTrashBeforeStage(stage.id) + stage.trashTarget;
   if (state.score < roundCompleteScore) return;
   state.pendingRound = state.round + 1;
   state.result = "upgrade";
   state.duck.vx = 0;
   state.duck.vz = 0;
   playSuccess();
-  ui.upgradeTitle.textContent = `第 ${state.round} 轮完成，选择一次升级`;
+  ui.upgradeTitle.textContent = `${stage.name}完成，选择一次升级`;
   ui.upgradeModal.hidden = false;
   document.exitPointerLock?.();
   updateUi();
+}
+
+function enterStage(stageId, options = {}) {
+  const stage = stages[Math.max(0, Math.min(stages.length - 1, stageId - 1))];
+  state.round = stage.id;
+  state.roundTarget = stage.trashTarget;
+  state.pendingRound = null;
+  state.result = "playing";
+  state.duck.carrying = [];
+  for (const visitor of state.visitors) visitor.timer = Math.min(visitor.timer, visitorThrowDelay() * 0.62);
+  if (stage.mode === "boss") setupBossStage();
+  if (!options.silent) addText(`${stage.name}开始`, state.duck.x, state.duck.z, stage.mode === "boss" ? "#b33327" : "#2d8064");
+}
+
+function setupBossStage() {
+  clearThrownProjectiles();
+  state.trash = [];
+  state.boss = makeBossVisitor();
+  state.bossSpawnTimer = 3.5;
+  state.duck.health = state.duck.maxHealth;
+  state.visitors = [
+    state.boss,
+    makeBossMinion(0),
+    makeBossMinion(1),
+    makeBossMinion(2),
+    makeBossMinion(3),
+    makeBossMinion(4),
+    makeBossMinion(5)
+  ];
+  for (const mesh of refs.visitors.values()) {
+    dynamic.remove(mesh);
+    disposeObject(mesh);
+  }
+  refs.visitors.clear();
+}
+
+function clearThrownProjectiles() {
+  for (const item of state.thrown) {
+    if (!item.mesh) continue;
+    dynamic.remove(item.mesh);
+    disposeObject(item.mesh);
+    refs.thrown.delete(item.mesh);
+  }
+  state.thrown = [];
 }
 
 function performAction() {
@@ -2057,6 +2205,17 @@ function performAction() {
   let warnedCount = 0;
   for (const v of state.visitors) {
     if (dist(duck, v) <= radius) {
+      if (v.isBoss) {
+        const damage = (state.duck.sign ? 17 : 12) + state.duck.quackBoost * 0.08;
+        v.health = Math.max(0, v.health - damage);
+        v.cooldown = Math.max(v.cooldown, 0.75);
+        v.shame = 2.2;
+        v.throwWindup = 0;
+        v.nextTarget = null;
+        warnedCount += 1;
+        addText(`重点游客 -${Math.round(damage)}`, v.x, v.z, "#b33327");
+        continue;
+      }
       v.cooldown = Math.max(v.cooldown, (state.duck.sign ? 40 : 28) + state.duck.quackBoost * 0.1);
       v.shame = 2.2;
       v.throwWindup = 0;
@@ -2071,6 +2230,7 @@ function performAction() {
   if (warnedCount > 0) {
     state.awareness = Math.min(100, state.awareness + warnedCount * (state.duck.sign ? 8 : 4));
     addText(`提醒 ${warnedCount} 人`, duck.x, duck.z, "#b33327");
+    maybeAdvanceRound();
   } else {
     addText("嘎", duck.x, duck.z, "#315f96");
   }
@@ -2087,6 +2247,7 @@ function update(dt) {
     updateParticles(dt);
     syncScene();
     updateCamera(dt);
+    updateUi();
     return;
   }
 
@@ -2096,7 +2257,7 @@ function update(dt) {
   if (state.comboTimer <= 0) state.combo = 0;
   state.clarity -= (state.trash.length * 0.07 + urgentCount * 0.12) * dt;
   state.clarity = clamp(state.clarity, 0, 100);
-  if (state.clarity <= 6) {
+  if (state.clarity <= pollutionFailThreshold) {
     state.result = "lost";
     addText("湖面失守", state.duck.x, state.duck.z, "#b33327");
     playFailure();
@@ -2105,6 +2266,7 @@ function update(dt) {
   }
 
   updateDuck(dt);
+  updateBossPressure(dt);
   updateVisitors(dt);
   updateThrown(dt);
   updateTrash(dt);
@@ -2116,20 +2278,13 @@ function update(dt) {
 
 function openChannelAndWin() {
   if (state.result === "won") return;
-  for (const item of state.thrown) {
-    if (item.mesh) {
-      dynamic.remove(item.mesh);
-      disposeObject(item.mesh);
-      refs.thrown.delete(item.mesh);
-    }
-  }
-  state.thrown = [];
+  clearThrownProjectiles();
   state.trash = [];
-  state.round = totalRounds;
+  state.round = totalStages;
   state.result = "won";
   state.clarity = Math.max(state.clarity, 72);
-  addText("湖底水道打开", lake.rx * 0.72, -lake.rz * 0.98, "#2d8064");
-  addText("未名湖恢复清澈", state.duck.x, state.duck.z, "#2d8064");
+  addText("重点游客离开", lake.rx * 0.72, -lake.rz * 0.98, "#2d8064");
+  addText("胜利", state.duck.x, state.duck.z, "#2d8064");
   addRipple(lake.rx * 0.72, -lake.rz * 0.98, 0x2d8064);
   playSuccess();
 }
@@ -2212,6 +2367,18 @@ function updateDuck(dt) {
   }
 }
 
+function updateBossPressure(dt) {
+  if (currentStage().mode !== "boss" || !state.boss || state.boss.health <= 0) return;
+  state.bossSpawnTimer -= dt;
+  const minionCount = state.visitors.filter((visitor) => visitor.isMinion).length;
+  if (state.bossSpawnTimer > 0 || minionCount >= 28) return;
+  const minion = makeBossMinion(minionCount);
+  minion.timer = Math.min(minion.timer, visitorThrowDelay() * 0.45);
+  state.visitors.push(minion);
+  state.bossSpawnTimer = Math.max(2.4, 7.2 - minionCount * 0.18 - (1 - state.boss.health / state.boss.maxHealth) * 2.6);
+  addText("又有跟随游客加入", minion.x, minion.z, "#8a5a2f");
+}
+
 function updateVisitors(dt) {
   for (const visitor of state.visitors) {
     visitor.drift += dt;
@@ -2232,15 +2399,17 @@ function updateVisitors(dt) {
       playVisitorChatter(visitor.shame > 0);
     }
     if (visitor.timer < 1.1 && !visitor.nextTarget) {
-      visitor.nextTarget = randomWaterTarget();
-      visitor.throwWindup = 1.1;
+      visitor.nextTarget = visitor.isBoss || (currentStage().mode === "boss" && Math.random() < 0.62)
+        ? { x: state.duck.x, z: state.duck.z, aimDuck: true }
+        : randomWaterTarget();
+      visitor.throwWindup = visitor.isBoss ? 1.35 : 1.1;
       playVisitorWindup();
     }
     if (visitor.throwWindup > 0) visitor.throwWindup -= dt;
     if (visitor.timer <= 0) {
       const target = visitor.nextTarget || randomWaterTarget();
       const typeIndex = Math.floor(Math.random() * trashTypes.length);
-      const urgent = Math.random() < 0.12;
+      const urgent = visitor.isBoss || Math.random() < (currentStage().mode === "boss" ? 0.28 : 0.12);
       state.thrown.push({
         id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()),
         x: visitor.x,
@@ -2252,10 +2421,13 @@ function updateVisitors(dt) {
         t: 0,
         typeIndex,
         urgent,
+        aimDuck: target.aimDuck || false,
+        damage: visitor.throwDamage || 8,
+        hitRadius: visitor.isBoss ? 2.25 : 1.55,
         mesh: null
       });
       playVisitorThrow(urgent);
-      visitor.timer = visitorThrowDelay();
+      visitor.timer = visitor.isBoss ? 1.7 + Math.random() * 1.1 : visitorThrowDelay();
       visitor.nextTarget = null;
       visitor.throwWindup = 0;
     }
@@ -2271,10 +2443,22 @@ function updateThrown(dt) {
     item.z = item.sz + (item.tz - item.sz) * t;
     item.y = 1.05 + arc;
     if (t >= 1) {
-      state.trash.push(makeTrashWorld(item.tx, item.tz, item.typeIndex, item.urgent));
-      addRipple(item.tx, item.tz, 0xd24d3f);
-      addDroplets(item.tx, item.tz, item.urgent ? 0xffb3a8 : 0xe8fbff);
-      state.cameraShake = 0.16;
+      let dropPoint = { x: item.tx, z: item.tz };
+      if (!isWater(dropPoint.x, dropPoint.z)) dropPoint = randomWaterTarget();
+      if (item.aimDuck && dist(state.duck, item) <= (item.hitRadius || 1.35)) {
+        state.duck.health = Math.max(0, state.duck.health - (item.damage || 8));
+        addText(`鸭子 -${item.damage || 8}`, state.duck.x, state.duck.z, "#b33327");
+        state.cameraShake = Math.max(state.cameraShake, 0.34);
+        if (state.duck.health <= 0 && state.result === "playing") {
+          state.result = "lost";
+          addText("鸭子被赶退", state.duck.x, state.duck.z, "#b33327");
+          playFailure();
+        }
+      }
+      state.trash.push(makeTrashWorld(dropPoint.x, dropPoint.z, item.typeIndex, item.urgent));
+      addRipple(dropPoint.x, dropPoint.z, 0xd24d3f);
+      addDroplets(dropPoint.x, dropPoint.z, item.urgent ? 0xffb3a8 : 0xe8fbff);
+      state.cameraShake = Math.max(state.cameraShake, 0.16);
     }
   }
   for (const item of state.thrown.filter((item) => item.t >= 1)) {
@@ -2455,10 +2639,15 @@ function syncScene(force = false) {
     }
     mesh.position.set(visitor.x, terrainHeightAt(visitor.x, visitor.z), visitor.z);
     mesh.lookAt(camera.position.x, 0, camera.position.z);
-    mesh.userData.shirt.color.setHex(visitor.cooldown > 0 ? 0x6a9b5a : 0x315f96);
+    mesh.userData.shirt.color.setHex(visitor.cooldown > 0 ? 0x6a9b5a : (visitor.shirtColor || 0x315f96));
     const wind = visitor.throwWindup > 0 ? 1 : 0;
     mesh.userData.arms[0].rotation.z = -0.55 - wind * 0.7;
     mesh.userData.arms[1].rotation.z = 0.55 + wind * 0.7;
+    if (visitor.isBoss && mesh.userData.healthFill) {
+      const pct = clamp(visitor.health / visitor.maxHealth, 0, 1);
+      mesh.userData.healthFill.scale.x = pct;
+      mesh.userData.healthFill.position.x = (pct - 1) * 0.43;
+    }
   }
 
   for (const item of state.thrown) {
@@ -2542,6 +2731,9 @@ function updateMinimap() {
   };
   makeDot(state.duck.x, state.duck.z, "duck");
   for (const item of state.trash) makeDot(item.x, item.z, item.urgent ? "urgent" : "trash");
+  if (currentStage().mode === "boss") {
+    for (const visitor of state.visitors) makeDot(visitor.x, visitor.z, visitor.isBoss ? "boss" : "minion");
+  }
 }
 
 function updateUi() {
@@ -2549,6 +2741,7 @@ function updateUi() {
   const awareness = Math.round(state.awareness);
   const stamina = Math.round(state.duck.stamina);
   const staminaPct = Math.round(state.duck.stamina / state.duck.maxStamina * 100);
+  const stage = currentStage();
   const roundProgress = currentRoundProgress();
   ui.clarityValue.textContent = `${clarity}%`;
   ui.awarenessValue.textContent = `${awareness}%`;
@@ -2556,15 +2749,29 @@ function updateUi() {
   ui.clarityBar.style.width = `${clarity}%`;
   ui.awarenessBar.style.width = `${awareness}%`;
   ui.staminaBar.style.width = `${staminaPct}%`;
-  ui.scorePill.textContent = state.combo > 1
-    ? `第 ${state.round} / ${totalRounds} 轮  ${roundProgress} / ${roundTrashTarget}  x${state.combo}`
-    : `第 ${state.round} / ${totalRounds} 轮  ${roundProgress} / ${roundTrashTarget}`;
+  const inBossStage = stage.mode === "boss";
+  ui.duckHealthMeter.hidden = !inBossStage;
+  ui.bossHealthMeter.hidden = !inBossStage;
+  if (inBossStage) {
+    const duckHealth = Math.round(state.duck.health);
+    const bossHealth = Math.round(state.boss?.health || 0);
+    const bossHealthMax = state.boss?.maxHealth || bossMaxHealth;
+    ui.duckHealthValue.textContent = `${duckHealth}/${state.duck.maxHealth}`;
+    ui.bossHealthValue.textContent = `${bossHealth}/${bossHealthMax}`;
+    ui.duckHealthBar.style.width = `${clamp(state.duck.health / state.duck.maxHealth * 100, 0, 100)}%`;
+    ui.bossHealthBar.style.width = `${clamp((state.boss?.health || 0) / bossHealthMax * 100, 0, 100)}%`;
+    ui.scorePill.textContent = `第 ${state.round} / ${totalStages} 阶段  Boss ${bossHealth}/${bossHealthMax}`;
+  } else {
+    ui.scorePill.textContent = state.combo > 1
+      ? `第 ${state.round} / ${totalStages} 阶段  ${roundProgress} / ${stage.trashTarget}  x${state.combo}`
+      : `第 ${state.round} / ${totalStages} 阶段  ${roundProgress} / ${stage.trashTarget}`;
+  }
   updatePauseMenu();
 
   if (state.result === "won") {
-    ui.actionText.textContent = "水道已打开";
-    ui.missionText.textContent = "游戏胜利";
-    ui.nearestText.textContent = "通往朗润湖";
+    ui.actionText.textContent = "胜利";
+    ui.missionText.textContent = "进入第二阶段（尚未完成）";
+    ui.nearestText.textContent = "重点游客已离开";
     ui.actionButton.textContent = "再玩一次";
     return;
   }
@@ -2577,8 +2784,8 @@ function updateUi() {
   }
   if (state.result === "upgrade") {
     ui.actionText.textContent = "选择升级";
-    ui.missionText.textContent = `第 ${state.round} 轮完成`;
-    ui.nearestText.textContent = `即将进入第 ${state.pendingRound} 轮`;
+    ui.missionText.textContent = `${stage.name}完成`;
+    ui.nearestText.textContent = `即将进入第 ${state.pendingRound} 阶段`;
     ui.actionButton.textContent = "等待选择";
     return;
   }
@@ -2591,7 +2798,7 @@ function updateUi() {
   if (carryingCount() > 0 && nearBin.d < 3.0) action = "投放到回收点";
   else if (carryingCount() > 0) action = `叼着${carriedLabel(duck.carrying)} (${carryingCount()}/${duck.carryCapacity})`;
   else if (nearTrash && nearTrash.d < 1.45) action = `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
-  else if (nearVisitor && nearVisitor.d < (duck.sign ? 2.45 : 1.8)) action = duck.sign ? "举牌提醒游客" : "鸣叫提醒游客";
+  else if (nearVisitor && nearVisitor.d < (nearVisitor.visitor?.isBoss ? 4.8 : (duck.sign ? 2.45 : 1.8))) action = nearVisitor.visitor?.isBoss ? "鸣叫压制重点游客" : (duck.sign ? "举牌提醒游客" : "鸣叫提醒游客");
   ui.actionText.textContent = action;
   ui.actionButton.textContent = action === "巡湖中" ? "鸣叫" : "行动";
 
@@ -2606,22 +2813,27 @@ function updateUi() {
   else if (state.combo > 1) ui.missionText.textContent = `连击中: ${state.combo} 次`;
   else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = "还可以再叼 1 件";
   else if (carryingCount() > 0) ui.missionText.textContent = "送到岸边绿色回收点";
+  else if (stage.mode === "boss") {
+    const minions = state.visitors.filter((visitor) => visitor.isMinion).length;
+    ui.missionText.textContent = `赶走重点游客，跟随游客 ${minions} 人`;
+  }
   else if (state.trash.some((item) => item.urgent)) ui.missionText.textContent = "优先处理红色污染热点";
-  else if (roundProgress >= roundTrashTarget - 2) {
-    const left = roundTrashTarget - roundProgress;
-    ui.missionText.textContent = state.round === totalRounds ? `再清理 ${left} 件打开水道` : `再清理 ${left} 件完成本轮`;
+  else if (roundProgress >= stage.trashTarget - 2) {
+    const left = stage.trashTarget - roundProgress;
+    ui.missionText.textContent = `再清理 ${left} 件进入下一阶段`;
   }
   else if (state.trash.length > 0) ui.missionText.textContent = "定位并清理漂浮垃圾";
-  else ui.missionText.textContent = `第 ${state.round} 轮: 盯住岸边游客`;
+  else ui.missionText.textContent = `${stage.name}: 盯住岸边游客`;
 }
 
 function updatePauseMenu() {
   if (!ui.pauseMenu) return;
+  const stage = currentStage();
   const roundProgress = currentRoundProgress();
-  ui.pauseRoundText.textContent = `第 ${state.round} / ${totalRounds} 轮`;
-  ui.pauseRoundProgressText.textContent = `${roundProgress} / ${roundTrashTarget}`;
-  ui.pauseTotalText.textContent = `${state.score} / ${totalTrashTarget}`;
-  ui.pausePressureText.textContent = `第 ${state.round} 档`;
+  ui.pauseRoundText.textContent = `第 ${state.round} / ${totalStages} 阶段`;
+  ui.pauseRoundProgressText.textContent = stage.mode === "boss" ? `Boss ${roundProgress}%` : `${roundProgress} / ${stage.trashTarget}`;
+  ui.pauseTotalText.textContent = `${state.score} / ${cleanupTrashTarget}`;
+  ui.pausePressureText.textContent = stage.pressureLabel;
 }
 
 function showPauseMenu() {
@@ -2678,11 +2890,7 @@ function chooseUpgrade(type) {
     addText("升级: 鸣叫更远", duck.x, duck.z, "#315f96");
   }
   ui.upgradeModal.hidden = true;
-  state.round = state.pendingRound || Math.min(totalRounds, state.round + 1);
-  state.pendingRound = null;
-  state.result = "playing";
-  for (const visitor of state.visitors) visitor.timer = Math.min(visitor.timer, visitorThrowDelay() * 0.62);
-  addText(`第 ${state.round} 轮开始`, duck.x, duck.z, "#b33327");
+  enterStage(state.pendingRound || Math.min(totalStages, state.round + 1));
   updateUi();
 }
 

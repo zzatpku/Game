@@ -127,6 +127,18 @@ h1 {
   background: linear-gradient(90deg, #e3a72f, #e06f2a);
 }
 
+.track-red i {
+  background: linear-gradient(90deg, #d24d3f, #e3a72f);
+}
+
+.track-boss i {
+  background: linear-gradient(90deg, #7d2532, #d24d3f);
+}
+
+.meter[hidden] {
+  display: none;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -351,6 +363,16 @@ canvas:active {
   width: 9px;
   height: 9px;
   background: #b33327;
+}
+
+.radar-dot.boss {
+  width: 11px;
+  height: 11px;
+  background: #7d2532;
+}
+
+.radar-dot.minion {
+  background: #8a5a2f;
 }
 
 .sidepanel {
