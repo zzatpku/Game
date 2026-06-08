@@ -295,7 +295,7 @@ function makeVisitor(x, y, label, timer, options = {}) {
     isMinion: options.isMinion || false,
     throwDamage: options.throwDamage ?? 8,
     shirtColor: options.shirtColor ?? 0x315f96,
-    patrolAngle: options.patrolAngle ?? Math.atan2(p.z, p.x),
+    patrolAngle: options.patrolAngle ?? ellipseAngle(p),
     patrolRadius: options.patrolRadius ?? lakeRadius(p.x, p.z),
     patrolSpeed: options.patrolSpeed ?? 0,
     patrolDirection: options.patrolDirection ?? 1
@@ -368,6 +368,10 @@ function lakeValue(x, z) {
 
 function ellipseValue(x, z, area) {
   return ((x - area.x) ** 2) / (area.rx * area.rx) + ((z - area.z) ** 2) / (area.rz * area.rz);
+}
+
+function ellipseAngle(point) {
+  return Math.atan2(point.z / lake.rz, point.x / lake.rx);
 }
 
 function isInsideIslandFootprint(x, z, padding = 0) {
@@ -2477,7 +2481,7 @@ function updateBossPressure(dt) {
       state.bossPhase = "moving";
       state.bossPhaseTimer = bossMoveDuration;
       state.bossMoveSpawned = 0;
-      state.boss.patrolAngle = Math.atan2(state.boss.z, state.boss.x);
+      state.boss.patrolAngle = ellipseAngle(state.boss);
       state.boss.patrolRadius = lakeRadius(state.boss.x, state.boss.z);
       addText("重点游客开始移动", state.boss.x, state.boss.z, "#b33327");
     }
@@ -2510,14 +2514,10 @@ function updateBossMovement(visitor, dt) {
   const healthPressure = 1 - visitor.health / visitor.maxHealth;
   visitor.patrolAngle += dt * visitor.patrolSpeed * visitor.patrolDirection * (1.0 + healthPressure * 0.65);
   visitor.patrolRadius = clamp(visitor.patrolRadius || lakeRadius(visitor.x, visitor.z), 1.11, playableLakeMargin);
-  const moved = placeOnShore({
-    x: Math.cos(visitor.patrolAngle) * lake.rx * visitor.patrolRadius,
-    z: Math.sin(visitor.patrolAngle) * lake.rz * visitor.patrolRadius
-  }, 1.13);
-  visitor.x = moved.x;
-  visitor.z = moved.z;
-  visitor.baseX = moved.x;
-  visitor.baseZ = moved.z;
+  visitor.x = Math.cos(visitor.patrolAngle) * lake.rx * visitor.patrolRadius;
+  visitor.z = Math.sin(visitor.patrolAngle) * lake.rz * visitor.patrolRadius;
+  visitor.baseX = visitor.x;
+  visitor.baseZ = visitor.z;
 }
 
 function updateVisitors(dt) {
