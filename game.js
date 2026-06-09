@@ -76,8 +76,8 @@ const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
 const stoneBoatWalkable = { x: stoneBoatCenter.x, z: stoneBoatCenter.z, rx: 1.78, rz: 3.15 };
 const stoneBoatFootprint = { x: stoneBoatCenter.x, z: stoneBoatCenter.z, rx: 1.9, rz: 3.35 };
 const bridgeCenterZ = (islandCenter.z - lake.rz * 1.02) / 2;
-const islandFootprint = { x: islandCenter.x, z: islandCenter.z, rx: 8.35, rz: 4.9 };
-const islandWalkable = { x: islandCenter.x, z: islandCenter.z, rx: 7.35, rz: 4.28 };
+const islandFootprint = { x: islandCenter.x, z: islandCenter.z, rx: 9.85, rz: 5.8 };
+const islandWalkable = { x: islandCenter.x, z: islandCenter.z, rx: 8.75, rz: 5.05 };
 const bridgeWaterSpanLength = lake.rz * 0.92;
 const bridgeHalfWidth = 1.46;
 const bridgeNorthEndZ = bridgeCenterZ - bridgeWaterSpanLength / 2;
@@ -100,8 +100,28 @@ const bridgePillarObstacles = [-lake.rz * 0.27, 0, lake.rz * 0.27].flatMap((z) =
     surfaces: ["water"]
   }))
 ));
+const islandTreePlacements = [
+  { type: "willow", scale: 1.24, x: -5.9, z: 0.16, rx: 0.42, rz: 0.42 },
+  { type: "pine", scale: 1.08, x: 5.8, z: 0.1, rx: 0.34, rz: 0.34 },
+  { type: "broadleaf", scale: 1.08, x: -3.8, z: -2.45, rx: 0.34, rz: 0.34 },
+  { type: "broadleaf", scale: 1.0, x: -3.15, z: 2.75, rx: 0.32, rz: 0.32 },
+  { type: "pine", scale: 0.98, x: -0.95, z: 3.4, rx: 0.31, rz: 0.31 },
+  { type: "willow", scale: 1.08, x: 2.75, z: 2.85, rx: 0.38, rz: 0.38 },
+  { type: "broadleaf", scale: 0.96, x: 4.65, z: -2.35, rx: 0.31, rz: 0.31 },
+  { type: "pine", scale: 0.92, x: 1.95, z: -3.42, rx: 0.3, rz: 0.3 },
+  { type: "broadleaf", scale: 0.9, x: -6.95, z: -1.58, rx: 0.3, rz: 0.3 },
+  { type: "willow", scale: 0.94, x: 6.95, z: 1.55, rx: 0.34, rz: 0.34 }
+];
+const islandTreeObstacles = islandTreePlacements.map((tree) => ({
+  x: islandCenter.x + tree.x,
+  z: islandCenter.z + tree.z,
+  rx: tree.rx,
+  rz: tree.rz,
+  surfaces: ["island"]
+}));
 const solidObstacles = [
-  ...bridgePillarObstacles
+  ...bridgePillarObstacles,
+  ...islandTreeObstacles
 ];
 const keys = new Set();
 const pointer = { dragging: false, x: 0, y: 0 };
@@ -1814,25 +1834,25 @@ function addShoreLandmarks() {
 
 function addIsland() {
   const group = new THREE.Group();
-  group.position.set(lake.rx * 0.08, islandLiftY, -lake.rz * 0.07);
+  group.position.set(islandCenter.x, islandLiftY, islandCenter.z);
   const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(8.0, 8.45, 0.46, 64),
+    new THREE.CylinderGeometry(9.3, 9.85, 0.48, 72),
     new THREE.MeshStandardMaterial({ color: 0xd2c27d, roughness: 0.9 })
   );
-  base.scale.z = 0.58;
+  base.scale.z = 0.59;
   base.castShadow = true;
   base.receiveShadow = true;
   group.add(base);
   const grass = new THREE.Mesh(
-    new THREE.CylinderGeometry(7.15, 7.54, 0.16, 64),
+    new THREE.CylinderGeometry(8.25, 8.72, 0.16, 72),
     new THREE.MeshStandardMaterial({ color: 0x89a95a, roughness: 0.9 })
   );
   grass.position.y = 0.2;
-  grass.scale.z = 0.55;
+  grass.scale.z = 0.58;
   grass.receiveShadow = true;
   group.add(grass);
 
-  for (const [x, z, r] of [[-3.8, -0.36, 1.0], [3.65, -0.32, 1.08], [0.3, 1.55, 0.78], [1.8, -1.55, 0.72], [-1.2, 2.0, 0.62]]) {
+  for (const [x, z, r] of [[-4.7, -0.4, 1.0], [4.35, -0.32, 1.08], [0.3, 1.72, 0.78], [1.8, -1.75, 0.72], [-1.2, 2.24, 0.62], [-6.5, 1.35, 0.64], [6.28, -1.46, 0.58]]) {
     const bush = new THREE.Mesh(
       new THREE.IcosahedronGeometry(r, 1),
       new THREE.MeshStandardMaterial({ color: 0x668f3c, roughness: 0.86 })
@@ -1841,8 +1861,9 @@ function addIsland() {
     bush.castShadow = true;
     group.add(bush);
   }
-  group.add(createTree("willow", 1.2, -4.7, 0.24));
-  group.add(createTree("pine", 1.02, 4.6, 0.18));
+  for (const tree of islandTreePlacements) {
+    group.add(createTree(tree.type, tree.scale, tree.x, tree.z));
+  }
 
   const pavilion = new THREE.Group();
   pavilion.position.set(0.2, 0.18, -0.06);
@@ -1872,7 +1893,7 @@ function addIsland() {
   group.add(pavilion);
 
   const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x9b9b8a, roughness: 0.92 });
-  for (const [x, z, s] of [[-6.8, -0.05, 0.42], [-5.8, 0.92, 0.3], [6.7, -0.76, 0.38], [5.8, 0.86, 0.3]]) {
+  for (const [x, z, s] of [[-8.0, -0.05, 0.42], [-6.7, 1.18, 0.3], [7.8, -0.88, 0.38], [6.65, 1.05, 0.3], [0.15, -4.05, 0.26]]) {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMaterial);
     rock.position.set(x, 0.27, z);
     rock.scale.y = 0.55;
@@ -2100,24 +2121,26 @@ function createVisitorMesh(visitor) {
   return group;
 }
 
-function createFloatText(text, color) {
+function createFloatText(text, color, options = {}) {
   const canvasText = document.createElement("canvas");
   canvasText.width = 512;
   canvasText.height = 128;
   const ctx = canvasText.getContext("2d");
+  const fontSize = options.fontSize ?? 54;
+  const scale = options.scale ?? { x: 2.3, y: 0.58 };
   ctx.clearRect(0, 0, canvasText.width, canvasText.height);
-  ctx.font = "900 54px system-ui";
+  ctx.font = `950 ${fontSize}px system-ui`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.lineWidth = 9;
-  ctx.strokeStyle = "rgba(255,255,251,0.92)";
+  ctx.lineWidth = options.strokeWidth ?? 9;
+  ctx.strokeStyle = options.strokeStyle ?? "rgba(255,255,251,0.92)";
   ctx.strokeText(text, 256, 64);
   ctx.fillStyle = color;
   ctx.fillText(text, 256, 64);
   const texture = new THREE.CanvasTexture(canvasText);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
-  sprite.scale.set(2.3, 0.58, 1);
+  sprite.scale.set(scale.x, scale.y, 1);
   dynamic.add(sprite);
   refs.floatTexts.add(sprite);
   return sprite;
@@ -2143,8 +2166,8 @@ function createTargetBeacon() {
   return group;
 }
 
-function addText(text, x, z, color = "#173638") {
-  state.floatTexts.push({ text, x, z, y: 1.15, a: 1, color, mesh: createFloatText(text, color) });
+function addText(text, x, z, color = "#173638", y = 1.15, options = {}) {
+  state.floatTexts.push({ text, x, z, y, a: 1, color, mesh: createFloatText(text, color, options) });
 }
 
 function addWake(x, z, angle, strong = false) {
@@ -3262,7 +3285,12 @@ function updateBossProjectiles(dt) {
         boss.shame = 2.0;
         boss.throwWindup = 0;
         boss.nextTarget = null;
-        addText(`命中 -${item.damage}`, boss.x, boss.z, item.urgent ? "#b33327" : "#315f96");
+        addText(`-${item.damage}`, boss.x, boss.z, "#e01f1a", 2.55, {
+          fontSize: 104,
+          scale: { x: 4.05, y: 1.1 },
+          strokeWidth: 15,
+          strokeStyle: "rgba(255,255,255,0.96)"
+        });
         addDroplets(boss.x, boss.z, item.urgent ? 0xffb3a8 : 0xe8fbff);
         state.cameraShake = Math.max(state.cameraShake, 0.22);
         playPickup();
@@ -4339,7 +4367,7 @@ window.addEventListener("pointerup", () => {
   pointer.dragging = false;
 });
 
-ui.restartButton.addEventListener("click", reset);
+ui.restartButton?.addEventListener("click", reset);
 ui.resumeButton.addEventListener("click", () => hidePauseMenu(false));
 ui.stageIntroButton.addEventListener("click", startStageAfterIntro);
 ui.fullscreenButton?.addEventListener("click", toggleFullscreen);
