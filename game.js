@@ -62,6 +62,8 @@ const powerupSlotCount = 3;
 const debugStage = getDebugStage();
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
+const stoneBoatWalkable = { x: stoneBoatCenter.x, z: stoneBoatCenter.z, rx: 1.78, rz: 3.15 };
+const stoneBoatFootprint = { x: stoneBoatCenter.x, z: stoneBoatCenter.z, rx: 1.9, rz: 3.35 };
 const bridgeCenterZ = (islandCenter.z - lake.rz * 1.02) / 2;
 const islandFootprint = { x: islandCenter.x, z: islandCenter.z, rx: 8.35, rz: 4.9 };
 const islandWalkable = { x: islandCenter.x, z: islandCenter.z, rx: 7.35, rz: 4.28 };
@@ -88,7 +90,6 @@ const bridgePillarObstacles = [-lake.rz * 0.27, 0, lake.rz * 0.27].flatMap((z) =
   }))
 ));
 const solidObstacles = [
-  { x: stoneBoatCenter.x, z: stoneBoatCenter.z, rx: 1.35, rz: 2.9 },
   ...bridgePillarObstacles
 ];
 const keys = new Set();
@@ -415,6 +416,16 @@ function isOnIsland(x, z, padding = 0) {
   return ellipseValue(x, z, area) <= 1;
 }
 
+function isInsideStoneBoatFootprint(x, z, padding = 0) {
+  return Math.abs(x - stoneBoatFootprint.x) <= stoneBoatFootprint.rx + padding
+    && Math.abs(z - stoneBoatFootprint.z) <= stoneBoatFootprint.rz + padding;
+}
+
+function isOnStoneBoat(x, z, padding = 0) {
+  return Math.abs(x - stoneBoatWalkable.x) <= stoneBoatWalkable.rx + padding
+    && Math.abs(z - stoneBoatWalkable.z) <= stoneBoatWalkable.rz + padding;
+}
+
 function isOnBridge(x, z, padding = 0) {
   const halfWidth = bridgeHalfWidth + padding;
   return Math.abs(x - islandCenter.x) <= halfWidth
@@ -423,7 +434,7 @@ function isOnBridge(x, z, padding = 0) {
 }
 
 function isWater(x, z) {
-  return lakeValue(x, z) < 1 && !isInsideIslandFootprint(x, z, 0.08);
+  return lakeValue(x, z) < 1 && !isInsideIslandFootprint(x, z, 0.08) && !isInsideStoneBoatFootprint(x, z, 0.06);
 }
 
 function isDuckSwimming(duck) {
@@ -444,8 +455,8 @@ function landOrWaterSurface(point) {
 
 function resolveDuckSurfaceMove(surface, from, to) {
   const toBridge = isOnBridge(to.x, to.z);
-  const toIslandTop = isOnIsland(to.x, to.z);
-  const toIslandFootprint = isInsideIslandFootprint(to.x, to.z, 0.04);
+  const toIslandTop = isOnIsland(to.x, to.z) || isOnStoneBoat(to.x, to.z);
+  const toIslandFootprint = isInsideIslandFootprint(to.x, to.z, 0.04) || isInsideStoneBoatFootprint(to.x, to.z, 0.04);
 
   if (surface === "bridge") {
     if (toIslandTop) return { blocked: false, surface: "island" };
@@ -488,7 +499,7 @@ function smoothstep(edge0, edge1, value) {
 }
 
 function terrainHeightAt(x, z) {
-  if (isOnIsland(x, z) || isOnBridge(x, z)) return bridgeDeckTopY;
+  if (isOnIsland(x, z) || isOnStoneBoat(x, z) || isOnBridge(x, z)) return bridgeDeckTopY;
   const r = lakeRadius(x, z);
   if (r < 0.985) return 0;
   if (r < 1.06) return smoothstep(0.985, 1.06, r) * bankTopY;
@@ -499,7 +510,7 @@ function terrainHeightAt(x, z) {
 function duckEyeTargetY(x, z, surface = "auto") {
   if (surface === "bridge" || surface === "island") return bridgeDeckTopY + duckWaterEyeY + duckLandEyeLift;
   if (surface === "water") return duckWaterEyeY;
-  if (surface === "auto" && isOnIsland(x, z)) return bridgeDeckTopY + duckWaterEyeY + duckLandEyeLift;
+  if (surface === "auto" && (isOnIsland(x, z) || isOnStoneBoat(x, z))) return bridgeDeckTopY + duckWaterEyeY + duckLandEyeLift;
   const shoreAmount = smoothstep(0.98, 1.06, lakeRadius(x, z));
   return terrainHeightAt(x, z) + duckWaterEyeY + shoreAmount * duckLandEyeLift;
 }
@@ -560,6 +571,21 @@ function pushOutOfIsland(point, padding = 0.28) {
     x: area.x + dx / v,
     z: area.z + dz / v
   };
+}
+
+function pushOutOfStoneBoat(point, padding = 0.22) {
+  const area = {
+    ...stoneBoatFootprint,
+    rx: stoneBoatFootprint.rx + padding,
+    rz: stoneBoatFootprint.rz + padding
+  };
+  const dx = point.x - area.x;
+  const dz = point.z - area.z;
+  if (Math.abs(dx) > area.rx || Math.abs(dz) > area.rz) return point;
+  const xGap = area.rx - Math.abs(dx);
+  const zGap = area.rz - Math.abs(dz);
+  if (xGap < zGap) return { ...point, x: area.x + Math.sign(dx || 1) * area.rx };
+  return { ...point, z: area.z + Math.sign(dz || 1) * area.rz };
 }
 
 function isSolidObstacle(x, z) {
@@ -1503,38 +1529,36 @@ function addShoreBuildings() {
 
 function addStoneBoat() {
   const group = new THREE.Group();
-  group.position.set(stoneBoatCenter.x, 0.04, stoneBoatCenter.z);
+  group.position.set(stoneBoatCenter.x, 0, stoneBoatCenter.z);
   group.rotation.y = Math.PI / 2;
   const material = new THREE.MeshStandardMaterial({ color: 0xd8d1bd, roughness: 0.88 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x6b6258, roughness: 0.86 });
-  const hull = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.58, 1.42), material);
-  hull.position.y = 0.32;
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.36, 3.55), material);
+  hull.position.y = bridgeDeckTopY - 0.18;
   hull.castShadow = true;
   hull.receiveShadow = true;
   group.add(hull);
-  const bow = new THREE.Mesh(new THREE.ConeGeometry(0.82, 1.2, 4), material);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(5.25, 0.08, 3.2), new THREE.MeshStandardMaterial({ color: 0xe2dccb, roughness: 0.9 }));
+  deck.position.y = bridgeDeckTopY + 0.04;
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  group.add(deck);
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(1.35, 0.72, 4), material);
   bow.rotation.z = Math.PI / 2;
   bow.rotation.y = Math.PI / 4;
-  bow.position.set(2.95, 0.32, 0);
+  bow.position.set(3.03, bridgeDeckTopY - 0.18, 0);
+  bow.scale.y = 0.72;
   bow.castShadow = true;
   group.add(bow);
   const stern = bow.clone();
-  stern.position.x = -2.95;
+  stern.position.x = -3.03;
   stern.rotation.z = -Math.PI / 2;
   group.add(stern);
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.92, 1.08), material);
-  cabin.position.y = 1.02;
-  cabin.castShadow = true;
-  group.add(cabin);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(2.75, 0.2, 1.34), dark);
-  roof.position.y = 1.58;
-  roof.castShadow = true;
-  group.add(roof);
-  for (const x of [-0.8, 0, 0.8]) {
-    const window = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.28), new THREE.MeshBasicMaterial({ color: 0xf5edc8, transparent: true, opacity: 0.75 }));
-    window.position.set(x, 1.02, -0.55);
-    window.rotation.y = Math.PI;
-    group.add(window);
+  for (const z of [-1.52, 1.52]) {
+    const rim = new THREE.Mesh(new THREE.BoxGeometry(4.85, 0.12, 0.12), dark);
+    rim.position.set(0, bridgeDeckTopY + 0.13, z);
+    rim.castShadow = true;
+    group.add(rim);
   }
   world.add(group);
 }
@@ -2926,7 +2950,11 @@ function updateTrash(dt) {
     item.vx *= 0.985;
     item.vz *= 0.985;
     if (!isWater(item.x, item.z)) {
-      const p = isInsideIslandFootprint(item.x, item.z, 0.16) ? pushOutOfIsland(item) : clampToLake(item, 0.95);
+      const p = isInsideIslandFootprint(item.x, item.z, 0.16)
+        ? pushOutOfIsland(item)
+        : isInsideStoneBoatFootprint(item.x, item.z, 0.16)
+          ? pushOutOfStoneBoat(item)
+          : clampToLake(item, 0.95);
       item.x = p.x;
       item.z = p.z;
       item.vx *= -0.4;
@@ -3200,7 +3228,7 @@ function updatePowerupUi(inBossStage) {
     const el = document.createElement("span");
     el.className = `powerup-slot${slot ? " filled" : ""}`;
     el.style.setProperty("--slot-color", slot ? `#${slot.color.toString(16).padStart(6, "0")}` : "#c8d4ca");
-    el.innerHTML = `<b>${index + 1}</b><strong>${slot ? slot.short : "-"}</strong><small>${slot ? slot.name : "空"}</small>`;
+    el.innerHTML = `<b>${index + 1}</b><strong>${slot ? slot.short : "-"}</strong><small>${slot ? slot.text : "空"}</small>`;
     ui.powerupSlots.append(el);
   });
   const effects = powerupTypes
@@ -3283,7 +3311,7 @@ function updateUi() {
   ui.actionButton.textContent = inBossStage && carryingCount() > 0 && nearBin.d >= 3.0 ? "鸣叫" : (action === "巡湖中" ? "鸣叫" : "行动");
 
   if (nearPowerup) {
-    ui.nearestText.textContent = `岛上道具 ${nearPowerup.item.type.name}`;
+    ui.nearestText.textContent = `岛上道具 ${nearPowerup.item.type.name}: ${nearPowerup.item.type.text}`;
   } else if (nearTrash) {
     const p = worldToOld(nearTrash.item);
     ui.nearestText.textContent = `${nearTrash.item.urgent ? "污染热点 " : ""}${regionName(nearTrash.item)}  X${p.x} Y${p.y}`;
@@ -3296,7 +3324,7 @@ function updateUi() {
   if (!duck.sign && state.score >= 4) ui.missionText.textContent = "告示牌已解锁";
   else if (state.combo > 1) ui.missionText.textContent = `连击中: ${state.combo} 次`;
   else if (carryingCount() > 0 && nearBin.d < 3.0) ui.missionText.textContent = "Space 投放到垃圾桶";
-  else if (nearPowerup && nearPowerup.d < 1.55) ui.missionText.textContent = "Space 放入道具槽；1/2/3 使用";
+  else if (nearPowerup && nearPowerup.d < 1.55) ui.missionText.textContent = `Space 收下；${nearPowerup.item.type.text}`;
   else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = `还可以再叼 ${effectiveCarryCapacity() - carryingCount()} 件`;
   else if (carryingCount() > 0) ui.missionText.textContent = inBossStage ? "左键投掷；命中不返湖，落空会回湖" : "送到岸边绿色回收点";
   else if (stage.mode === "boss") {

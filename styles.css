@@ -207,16 +207,7 @@ canvas:active {
 }
 
 .water-glow {
-  position: absolute;
-  left: -15%;
-  right: -15%;
-  bottom: -26%;
-  height: 54%;
-  background:
-    repeating-linear-gradient(104deg, rgba(220, 252, 255, 0), rgba(220, 252, 255, 0) 34px, rgba(220, 252, 255, 0.14) 42px, rgba(220, 252, 255, 0) 56px);
-  opacity: 0.5;
-  transform: rotate(-2deg);
-  animation: waterSweep 7s linear infinite;
+  display: none;
 }
 
 .reticle {
