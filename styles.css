@@ -59,6 +59,13 @@ button {
   pointer-events: none;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
 .fullscreen-button {
   min-width: 92px;
   height: 38px;
@@ -74,6 +81,30 @@ button {
   box-shadow: 0 12px 28px rgba(23, 54, 56, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   cursor: pointer;
   pointer-events: auto;
+}
+
+.fps-counter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(22, 48, 46, 0.12);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 12px 28px rgba(23, 54, 56, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.fps-counter.is-low {
+  color: #ffd1cc;
 }
 
 .fullscreen-button:hover {

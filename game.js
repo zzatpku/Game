@@ -38,7 +38,8 @@ const ui = {
   stageIntroTitle: document.querySelector("#stageIntroTitle"),
   stageIntroBody: document.querySelector("#stageIntroBody"),
   stageIntroButton: document.querySelector("#stageIntroButton"),
-  fullscreenButton: document.querySelector("#fullscreenButton")
+  fullscreenButton: document.querySelector("#fullscreenButton"),
+  fpsCounter: document.querySelector("#fpsCounter")
 };
 
 const oldLake = { cx: 642, cy: 375, rx: 495, ry: 255 };
@@ -203,6 +204,11 @@ let state;
 let audio;
 let yaw = -0.5;
 let pitch = -0.12;
+const fpsStats = {
+  lastTime: performance.now(),
+  frames: 0,
+  elapsed: 0
+};
 
 const movementAudioFiles = {
   land: [
@@ -4296,11 +4302,27 @@ function resizeRenderer() {
   }
 }
 
+function updateFpsCounter() {
+  if (!ui.fpsCounter) return;
+  const now = performance.now();
+  const frameMs = now - fpsStats.lastTime;
+  fpsStats.lastTime = now;
+  fpsStats.frames += 1;
+  fpsStats.elapsed += frameMs;
+  if (fpsStats.elapsed < 1000) return;
+  const fps = Math.round((fpsStats.frames * 1000) / fpsStats.elapsed);
+  ui.fpsCounter.textContent = `FPS ${fps}`;
+  ui.fpsCounter.classList.toggle("is-low", fps < 30);
+  fpsStats.frames = 0;
+  fpsStats.elapsed = 0;
+}
+
 function loop() {
   const dt = Math.min(0.033, clock.getDelta());
   resizeRenderer();
   update(dt);
   renderer.render(scene, camera);
+  updateFpsCounter();
 }
 
 window.addEventListener("keydown", (event) => {
