@@ -43,6 +43,11 @@
             <p>Boss 出现</p>
             <strong>污染煽动者 王乱丢</strong>
           </div>
+          <div class="powerup-panel" hidden>
+            <p class="panel-label">道具槽</p>
+            <div class="powerup-slots" id="powerupSlots" aria-label="powerup slots"></div>
+            <p class="powerup-effect" id="powerupEffectText">无进行中效果</p>
+          </div>
           <div class="radar" aria-label="position radar">
             <span>位置雷达</span>
             <div class="radar-map" id="radarMap"></div>
@@ -93,21 +98,16 @@
           </div>
           <div class="sidepanel">
             <div>
-              <p class="panel-label">当前行动</p>
+              <p class="panel-label">当前任务</p>
               <p class="panel-main" id="actionText">巡湖中</p>
             </div>
             <div>
-              <p class="panel-label">最近垃圾位置</p>
+              <p class="panel-label">道具</p>
               <p class="panel-main" id="nearestText">未发现</p>
             </div>
-            <div>
-              <p class="panel-label">任务进度</p>
+            <div id="missionPanel" hidden>
+              <p class="panel-label">跟随游客</p>
               <p class="panel-main" id="missionText">守住未名湖</p>
-            </div>
-            <div class="powerup-panel" hidden>
-              <p class="panel-label">道具槽</p>
-              <div class="powerup-slots" id="powerupSlots" aria-label="powerup slots"></div>
-              <p class="powerup-effect" id="powerupEffectText">无进行中效果</p>
             </div>
           </div>
         </aside>
@@ -163,6 +163,6 @@
       </div>
     </section>
 
-    <script type="module" src="game.js?v=30"></script>
+    <script type="module" src="game.js?v=34"></script>
   </body>
 </html>

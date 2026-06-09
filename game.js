@@ -18,6 +18,7 @@ const ui = {
   actionText: document.querySelector("#actionText"),
   nearestText: document.querySelector("#nearestText"),
   missionText: document.querySelector("#missionText"),
+  missionPanel: document.querySelector("#missionPanel"),
   restartButton: document.querySelector("#restartButton"),
   upgradeModal: document.querySelector("#upgradeModal"),
   upgradeTitle: document.querySelector("#upgradeTitle"),
@@ -207,6 +208,37 @@ const endingBriefing = {
   button: "再玩一次"
 };
 
+const failureBriefings = {
+  water: {
+    title: "湖面失守",
+    background: [
+      "未名湖的水面被漂浮垃圾和污染热点压住，清澈度降到了 0%。鸭子还在努力巡湖，但岸边的乱丢已经超过了它能及时处理的速度。",
+      "游客没有及时意识到问题，湖面的涟漪变得浑浊。守护未名湖需要更快清理污染热点，也需要更早把垃圾送回回收点。"
+    ],
+    goal: "重新开始，从最近的垃圾和红色污染热点入手，别让清澈度掉到 0%。",
+    rules: [
+      "Space 捡起垃圾，靠近绿色回收点再按 Space 投放。",
+      "红色污染热点会更快拉低清澈度，优先处理。",
+      "Shift 冲刺可以抢时间，但要留意体力。"
+    ],
+    button: "重新开始"
+  },
+  duck: {
+    title: "守护鸭倒下了",
+    background: [
+      "王乱丢和跟随游客的垃圾砸中了鸭子。它扑腾着退回湖面，翅膀打起一圈急促的水花。",
+      "未名湖还没有真正失守，但守护者需要重新组织节奏: 清理弹药、躲开投掷、抓住 Boss 停顿的窗口反击。"
+    ],
+    goal: "重新开始第三阶段，保持移动，捡垃圾作为弹药，命中 Boss 后尽快补充清澈度。",
+    rules: [
+      "左键投掷已携带垃圾攻击 Boss。",
+      "清澈度到 0% 后鸭子会持续掉血。",
+      "岛上道具可以改变战斗节奏，记得按 1/2/3 使用。"
+    ],
+    button: "重新开始"
+  }
+};
+
 let state;
 let audio;
 let yaw = -0.5;
@@ -368,6 +400,7 @@ function reset() {
       stamina: 0
     },
     duckPollutionTextTimer: 0,
+    damageFlash: 0,
     lastThrowInputAt: -Infinity,
     trash: [
       makeTrash(486, 330, 0),
@@ -718,13 +751,8 @@ function randomWaterTarget() {
   return { x: -lake.rx * 0.38, z: lake.rz * 0.12 };
 }
 
-function randomIslandPowerupPoint() {
-  for (let i = 0; i < 40; i += 1) {
-    const x = islandCenter.x + (Math.random() * 2 - 1) * islandWalkable.rx * 0.76;
-    const z = islandCenter.z + (Math.random() * 2 - 1) * islandWalkable.rz * 0.72;
-    if (isOnIsland(x, z) && !isSolidObstacle(x, z)) return { x, z };
-  }
-  return { x: islandCenter.x - 2.2, z: islandCenter.z + 0.9 };
+function islandPowerupPoint() {
+  return { x: stoneBoatCenter.x, z: stoneBoatCenter.z };
 }
 
 function dist(a, b) {
@@ -1229,7 +1257,7 @@ function addForestBackdrop() {
       const x = Math.cos(a) * lake.rx * radius;
       const z = Math.sin(a) * lake.rz * radius;
       const wave = 0.5 + Math.sin(a * 3.0 + layer) * 0.42 + Math.cos(a * 5.0) * 0.22;
-      temp.position.set(x, 2.35 + wave + (i % 5) * 0.18, z);
+      temp.position.set(x, terrainHeightAt(x, z) + 1.15 + wave * 0.45 + (i % 5) * 0.08, z);
       temp.rotation.set((Math.random() - 0.5) * 0.24, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.24);
       temp.scale.set(1.25 + (i % 6) * 0.18, 0.95 + (i % 5) * 0.14, 1.0 + (i % 4) * 0.2);
       temp.updateMatrix();
@@ -1322,14 +1350,14 @@ function addForestedSlopes() {
     const col = i % 28;
     const x = -lake.rx * 1.35 + col * 3.8 + Math.sin(i * 1.31) * 0.9;
     const z = -lake.rz * 1.55 + (i % 3) * 3.8 + Math.cos(i * 0.77) * 0.9;
-    const y = 1.25 + (i % 6) * 0.12;
+    const y = terrainHeightAt(x, z) + 0.03;
     addSlopeTree(x, y, z, 0.95 + (i % 5) * 0.14, i % 4 === 0, i % 3 === 0 ? darkBroadMaterial : broadMaterial);
   }
 
   for (let i = 0; i < 34; i += 1) {
     const x = -lake.rx * 1.65 + Math.sin(i * 0.7) * 5.5;
     const z = -lake.rz * 0.85 + i * 2.25;
-    const y = 1.05 + (i % 5) * 0.16;
+    const y = terrainHeightAt(x, z) + 0.03;
     addSlopeTree(x, y, z, 1.05 + (i % 4) * 0.12, i % 6 === 0, i % 2 === 0 ? broadMaterial : darkBroadMaterial);
   }
 
@@ -2409,6 +2437,20 @@ function maybeAdvanceRound() {
   updateUi();
 }
 
+function triggerFailure(reason = "water") {
+  if (state.result === "lost") return;
+  state.result = "lost";
+  state.duck.vx = 0;
+  state.duck.vz = 0;
+  keys.clear();
+  clearThrownProjectiles();
+  clearBossProjectiles();
+  clearGroundPowerup();
+  addText(reason === "duck" ? "鸭子被赶退" : "湖面失守", state.duck.x, state.duck.z, "#b33327");
+  showStoryModal(failureBriefings[reason] || failureBriefings.water, "reset");
+  playFailure();
+}
+
 function enterStage(stageId, options = {}) {
   const stage = stages[Math.max(0, Math.min(stages.length - 1, stageId - 1))];
   state.round = stage.id;
@@ -2589,7 +2631,7 @@ function clearGroundPowerup() {
 }
 
 function makePowerup(type) {
-  const point = randomIslandPowerupPoint();
+  const point = islandPowerupPoint();
   return {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()),
     type,
@@ -2672,9 +2714,7 @@ function updatePollutionHealthDamage(dt) {
     state.duckPollutionTextTimer = 2.4;
   }
   if (state.duck.health <= 0 && state.result === "playing") {
-    state.result = "lost";
-    addText("鸭子体力耗尽", state.duck.x, state.duck.z, "#b33327");
-    playFailure();
+    triggerFailure("duck");
   }
 }
 
@@ -2864,9 +2904,7 @@ function update(dt) {
   state.clarity -= (state.trash.length * 0.07 + urgentCount * 0.12) * dt;
   state.clarity = clamp(state.clarity, 0, 100);
   if (state.clarity <= pollutionFailThreshold && currentStage().mode !== "boss") {
-    state.result = "lost";
-    addText("湖面失守", state.duck.x, state.duck.z, "#b33327");
-    playFailure();
+    triggerFailure("water");
   } else {
     maybeAdvanceRound();
   }
@@ -3240,11 +3278,11 @@ function updateThrown(dt) {
       if (item.aimDuck && dist(state.duck, item) <= (item.hitRadius || 1.35)) {
         state.duck.health = Math.max(0, state.duck.health - (item.damage || 8));
         addText(`鸭子 -${item.damage || 8}`, state.duck.x, state.duck.z, "#b33327");
+        state.damageFlash = Math.max(state.damageFlash || 0, 0.7);
         state.cameraShake = Math.max(state.cameraShake, 0.34);
+        playDuckHurt();
         if (state.duck.health <= 0 && state.result === "playing") {
-          state.result = "lost";
-          addText("鸭子被赶退", state.duck.x, state.duck.z, "#b33327");
-          playFailure();
+          triggerFailure("duck");
         }
       }
       state.trash.push(makeTrashWorld(dropPoint.x, dropPoint.z, item.typeIndex, item.urgent));
@@ -3261,6 +3299,7 @@ function updateThrown(dt) {
   }
   state.thrown = state.thrown.filter((item) => item.t < 1);
   state.cameraShake = Math.max(0, state.cameraShake - dt);
+  state.damageFlash = Math.max(0, (state.damageFlash || 0) - dt);
 }
 
 function updateBossProjectiles(dt) {
@@ -3513,7 +3552,7 @@ function syncScene(force = false) {
       refs.powerup.userData.powerupId = state.powerup.id;
     }
     const bob = Math.sin(state.time * 3.2 + state.powerup.age) * 0.1;
-    refs.powerup.position.set(state.powerup.x, terrainHeightAt(state.powerup.x, state.powerup.z) + bob, state.powerup.z);
+    refs.powerup.position.set(state.powerup.x, terrainHeightAt(state.powerup.x, state.powerup.z) + 0.18 + bob * 0.45, state.powerup.z);
     refs.powerup.rotation.y += 0.035;
     refs.powerup.userData.core.rotation.x += 0.025;
     refs.powerup.userData.ring.material.opacity = 0.58 + Math.sin(state.time * 4.5) * 0.18;
@@ -3744,7 +3783,8 @@ function updateDamageVignette(inBossStage) {
   }
   const pct = clamp(state.duck.health / state.duck.maxHealth, 0, 1);
   const danger = clamp((0.72 - pct) / 0.72, 0, 1);
-  ui.damageVignette.style.opacity = String(danger * 0.78);
+  const flash = clamp((state.damageFlash || 0) / 0.7, 0, 1);
+  ui.damageVignette.style.opacity = String(Math.max(danger * 0.78, flash * 0.92));
 }
 
 function updateUi() {
@@ -3763,6 +3803,7 @@ function updateUi() {
   const inBossStage = stage.mode === "boss";
   updateBossPointer(inBossStage);
   updateDamageVignette(inBossStage);
+  ui.actionText.classList.toggle("escape-alert", state.result === "ending");
   ui.duckHealthMeter.hidden = !inBossStage;
   ui.bossHealthMeter.hidden = !inBossStage;
   if (inBossStage) {
@@ -3782,82 +3823,60 @@ function updateUi() {
   updatePowerupUi(inBossStage && state.result === "playing");
   updatePauseMenu();
 
+  if (ui.missionPanel) ui.missionPanel.hidden = !inBossStage;
   if (state.result === "ending") {
     ui.actionText.textContent = `${bossShortName}正在逃走`;
-    ui.missionText.textContent = "看清污染者离开未名湖";
     ui.nearestText.textContent = "游客正在撤离岸边";
+    ui.missionText.textContent = "跟随游客撤离中";
     return;
   }
   if (state.result === "won") {
     ui.actionText.textContent = "胜利";
-    ui.missionText.textContent = "进入第二阶段（尚未完成）";
     ui.nearestText.textContent = "重点游客已离开";
+    ui.missionText.textContent = "0 人";
     return;
   }
   if (state.result === "lost") {
-    ui.actionText.textContent = "水质过低";
-    ui.missionText.textContent = "需要更快清理";
-    ui.nearestText.textContent = "污染扩散";
+    ui.actionText.textContent = inBossStage ? "守护鸭倒下，重新组织反击" : "湖面失守，重新规划清理路线";
+    ui.nearestText.textContent = inBossStage ? "道具已暂停刷新" : "第三阶段开放";
+    ui.missionText.textContent = inBossStage ? `${state.visitors.filter((visitor) => visitor.isMinion).length} 人` : "";
     return;
   }
   if (state.result === "upgrade") {
     ui.actionText.textContent = "选择升级";
-    ui.missionText.textContent = `${stage.name}完成`;
-    ui.nearestText.textContent = `即将进入第 ${state.pendingRound} 阶段`;
+    ui.nearestText.textContent = "第三阶段开放";
+    ui.missionText.textContent = "";
     return;
   }
 
-  const duck = state.duck;
-  const nearTrash = nearestTrash();
   const nearPowerup = inBossStage ? nearestPowerup() : null;
-  const nearVisitor = nearestVisitor();
-  const nearBin = nearestRecyclePoint(duck);
-  const bossAim = inBossStage ? aimAtBoss() : null;
-  let action = "巡湖中";
-  if (nearPowerup && nearPowerup.d < 1.55) action = `拾取${nearPowerup.item.type.name}`;
-  else if (carryingCount() > 0 && nearBin.d < 3.0) action = "投放到回收点";
-  else if (inBossStage && carryingCount() > 0 && hasActiveEffect("cleaner")) action = "净水叶生效中，不能投掷";
-  else if (inBossStage && carryingCount() > 0) action = bossAim.locked ? "左键投掷重点游客" : "左键投掷会落水";
-  else if (carryingCount() > 0) action = `叼着${carriedLabel(duck.carrying)} (${carryingCount()}/${effectiveCarryCapacity()})`;
-  else if (nearTrash && nearTrash.d < 1.45) action = hasActiveEffect("cleaner")
-    ? `净化${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`
-    : `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
-  else if (nearVisitor && nearVisitor.d < (nearVisitor.visitor?.isBoss ? 4.8 : (duck.sign ? 2.45 : 1.8))) action = nearVisitor.visitor?.isBoss ? "鸣叫打断重点游客" : (duck.sign ? "举牌提醒游客" : "鸣叫（游客看不懂）");
-  ui.actionText.textContent = action;
+  const carrying = carryingCount();
+  if (inBossStage) {
+    const minions = state.visitors.filter((visitor) => visitor.isMinion).length;
+    const bossHealth = Math.round(state.boss?.health || 0);
+    const phase = bossPhaseLabel();
+    ui.actionText.textContent = carrying > 0
+      ? `击退王乱丢: 弹药 ${carrying}/${effectiveCarryCapacity()}，Boss ${bossHealth}，${phase}`
+      : `击退王乱丢: 先捡垃圾作弹药，Boss ${bossHealth}，${phase}`;
+    ui.missionText.textContent = `${minions} 人`;
+  } else {
+    const left = Math.max(0, stage.trashTarget - roundProgress);
+    const urgentCount = state.trash.filter((item) => item.urgent).length;
+    ui.actionText.textContent = urgentCount > 0
+      ? `${stage.name}: 优先清理 ${urgentCount} 个污染热点，再完成 ${left} 点进度`
+      : `${stage.name}: 清理并回收到垃圾桶，还差 ${left} 点进度`;
+    ui.missionText.textContent = "";
+  }
 
   if (nearPowerup) {
-    ui.nearestText.textContent = `岛上道具 ${nearPowerup.item.type.name}: ${nearPowerup.item.type.text}`;
-  } else if (nearTrash) {
-    const p = worldToOld(nearTrash.item);
-    ui.nearestText.textContent = `${nearTrash.item.urgent ? "污染热点 " : ""}${regionName(nearTrash.item)}  X${p.x} Y${p.y}`;
-  } else if (inBossStage && state.boss) {
-    ui.nearestText.textContent = bossAim.locked ? "准星已锁定重点游客" : "未锁定会落回湖里";
+    ui.nearestText.textContent = nearPowerup.item.type.name;
+  } else if (inBossStage) {
+    ui.nearestText.textContent = state.powerupSpawnTimer > 0
+      ? `下一道具约 ${Math.ceil(state.powerupSpawnTimer)}s`
+      : "湖心岛道具即将出现";
   } else {
-    ui.nearestText.textContent = "未发现";
+    ui.nearestText.textContent = "第三阶段开放";
   }
-
-  if (hasActiveEffect("cleaner")) ui.missionText.textContent = "净水叶生效中: 捡到垃圾会直接净化，不能投掷";
-  else if (stage.id === 1 && nearVisitor && nearVisitor.d < 2.0) ui.missionText.textContent = "第一阶段鸣叫还不能阻止游客";
-  else if (state.combo > 1) ui.missionText.textContent = `连击中: ${state.combo} 次`;
-  else if (carryingCount() > 0 && nearBin.d < 3.0) ui.missionText.textContent = "Space 投放到垃圾桶";
-  else if (nearPowerup && nearPowerup.d < 1.55) ui.missionText.textContent = `Space 收下；${nearPowerup.item.type.text}`;
-  else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = `还可以再叼 ${effectiveCarryCapacity() - carryingCount()} 件`;
-  else if (carryingCount() > 0) ui.missionText.textContent = inBossStage ? "左键投掷；命中不返湖，落空会回湖" : "送到岸边绿色回收点";
-  else if (stage.id === 2 && duck.sign && nearVisitor && nearVisitor.d < 4.4) ui.missionText.textContent = "Space 举牌提醒: 游客停扔 20s，清理进度 +2";
-  else if (stage.mode === "boss") {
-    const minions = state.visitors.filter((visitor) => visitor.isMinion).length;
-    const phase = bossPhaseLabel();
-    ui.missionText.textContent = carryingCount() > 0
-      ? `${phase}: 左键投掷或先保洁，跟随游客 ${minions} 人`
-      : `${phase}: 捡垃圾作弹药，跟随游客 ${minions} 人`;
-  }
-  else if (state.trash.some((item) => item.urgent)) ui.missionText.textContent = "优先处理红色污染热点";
-  else if (roundProgress >= stage.trashTarget - 2) {
-    const left = stage.trashTarget - roundProgress;
-    ui.missionText.textContent = `再清理 ${left} 件进入下一阶段`;
-  }
-  else if (state.trash.length > 0) ui.missionText.textContent = "定位并清理漂浮垃圾";
-  else ui.missionText.textContent = `${stage.name}: 盯住岸边游客`;
 }
 
 function updatePauseMenu() {
@@ -3984,7 +4003,9 @@ function ensureAudio() {
     visitorReadyAt: 0,
     ambienceStarted: false,
     quack,
-    quackFallback: false
+    hurtQuack: Object.assign(new Audio("assets/mallard-quack-old.mp3"), { preload: "auto", volume: 0.38 }),
+    quackFallback: false,
+    hurtQuackFallback: false
   };
   loadMovementSamples(audio);
   loadAmbientSample(audio);
@@ -4089,6 +4110,8 @@ function playMovementSample(name, {
   playbackRate = 1,
   randomRate = 0.04,
   maxDuration = null,
+  startOffset = 0,
+  startOffsetRatio = 0,
   delay = 0
 } = {}) {
   const setup = audio;
@@ -4098,12 +4121,14 @@ function playMovementSample(name, {
   const gain = setup.ctx.createGain();
   source.buffer = samples[Math.floor(Math.random() * samples.length)];
   source.playbackRate.value = Math.max(0.72, playbackRate + (Math.random() * 2 - 1) * randomRate);
-  const duration = maxDuration ? Math.min(source.buffer.duration, maxDuration) : source.buffer.duration;
+  const offset = clamp(startOffset + source.buffer.duration * startOffsetRatio, 0, Math.max(0, source.buffer.duration - 0.02));
+  const available = Math.max(0.02, source.buffer.duration - offset);
+  const duration = maxDuration ? Math.min(available, maxDuration) : available;
   gain.gain.setValueAtTime(gainValue, setup.ctx.currentTime + delay);
   gain.gain.exponentialRampToValueAtTime(0.001, setup.ctx.currentTime + delay + duration);
   source.connect(gain);
   gain.connect(setup.master);
-  source.start(setup.ctx.currentTime + delay, 0, duration);
+  source.start(setup.ctx.currentTime + delay, offset, duration);
   return true;
 }
 
@@ -4164,6 +4189,34 @@ function playQuack() {
   }
 }
 
+function playDuckHurt() {
+  const setup = ensureAudio();
+  if (!setup || setup.hurtQuackFallback) {
+    playTone(720, 0.09, "triangle", 0.05, 0.64);
+    setTimeout(() => playTone(430, 0.12, "sawtooth", 0.028, 0.7), 58);
+    return;
+  }
+  try {
+    setup.hurtQuack.pause();
+    setup.hurtQuack.currentTime = 1;
+    setup.hurtQuack.playbackRate = 1.18;
+    window.clearTimeout(setup.hurtQuackStopTimer);
+    setup.hurtQuack.play().catch(() => {
+      setup.hurtQuackFallback = true;
+      playTone(720, 0.09, "triangle", 0.05, 0.64);
+      setTimeout(() => playTone(430, 0.12, "sawtooth", 0.028, 0.7), 58);
+    });
+    setup.hurtQuackStopTimer = window.setTimeout(() => {
+      setup.hurtQuack.pause();
+      setup.hurtQuack.currentTime = 1;
+    }, 600);
+  } catch {
+    setup.hurtQuackFallback = true;
+    playTone(720, 0.09, "triangle", 0.05, 0.64);
+    setTimeout(() => playTone(430, 0.12, "sawtooth", 0.028, 0.7), 58);
+  }
+}
+
 function footstepInterval(surface, sprinting = false) {
   if (surface === "bridge") return sprinting ? 0.22 : 0.31;
   if (surface === "island") return sprinting ? 0.24 : 0.34;
@@ -4179,7 +4232,8 @@ function playPaddle(strong = false, speed = 1) {
     gainValue: (strong ? 0.46 : 0.36) + speedLift * 0.053,
     playbackRate: strong ? 1.04 : 0.9 + speedLift * 0.12,
     randomRate: 0.025,
-    maxDuration: strong ? 0.92 : 1.08
+    maxDuration: strong ? 0.72 : 0.82,
+    startOffsetRatio: 0.52
   })) return;
 }
 
