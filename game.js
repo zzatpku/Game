@@ -71,6 +71,13 @@ const powerupSlotCount = 3;
 const bossName = "污染煽动者 王乱丢";
 const bossShortName = "王乱丢";
 const bossEscapeDuration = 9.2;
+const boyaTowerFront = { x: lake.rx * 1.12, z: lake.rz * 0.7 };
+const bossEscapeLines = [
+  { at: 0.45, text: "我错了，我不该乱丢垃圾!" },
+  { at: 2.1, text: "我现在就离开未名湖!" },
+  { at: 3.9, text: "以后再也不来捣乱了!" },
+  { at: 5.7, text: "大家别跟着乱丢了，快走!" }
+];
 const debugStage = getDebugStage();
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
@@ -827,7 +834,6 @@ function buildWorld() {
   addWalkingVisitors();
   addIsland();
   addRecycle();
-  addBoundaryFence();
 }
 
 function addSkyDome() {
@@ -1525,47 +1531,6 @@ function createTree(type, scale, x, z) {
   }
 
   return group;
-}
-
-function addBoundaryFence() {
-  const material = new THREE.MeshStandardMaterial({ color: 0x8a5a38, roughness: 0.72 });
-  const postGeometry = new THREE.BoxGeometry(0.18, 0.84, 0.18);
-  const railGeometry = new THREE.BoxGeometry(1, 0.12, 0.12);
-  const group = new THREE.Group();
-
-  const addPost = (x, z) => {
-    const post = new THREE.Mesh(postGeometry, material);
-    post.position.set(x, terrainHeightAt(x, z) + 0.42, z);
-    post.castShadow = true;
-    group.add(post);
-  };
-  const addRail = (a, b) => {
-    const rail = new THREE.Mesh(railGeometry, material);
-    const length = Math.hypot(a.x - b.x, a.z - b.z);
-    const x = (a.x + b.x) / 2;
-    const z = (a.z + b.z) / 2;
-    rail.position.set(x, terrainHeightAt(x, z) + 0.62, z);
-    rail.scale.x = length;
-    rail.rotation.y = Math.atan2(b.x - a.x, b.z - a.z) + Math.PI / 2;
-    rail.castShadow = true;
-    group.add(rail);
-  };
-
-  const points = [];
-  for (let i = 0; i < 84; i += 1) {
-    const a = i / 84 * Math.PI * 2;
-    points.push({
-      x: Math.cos(a) * lake.rx * playableLakeMargin,
-      z: Math.sin(a) * lake.rz * playableLakeMargin
-    });
-  }
-  for (let i = 0; i < points.length; i += 1) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    addPost(a.x, a.z);
-    addRail(a, b);
-  }
-  world.add(group);
 }
 
 function createBuilding(width, depth, floors, color, roofColor = 0x6c5340) {
@@ -2933,15 +2898,36 @@ function openChannelAndWin() {
   playSuccess();
 }
 
-function escapeRouteForVisitor(start, index, total) {
-  const offset = (index - (total - 1) / 2) * 0.95;
-  return [
-    { x: start.x, z: start.z },
-    { x: lake.rx * 1.16 + offset, z: lake.rz * 0.18 + offset * 0.08 },
-    { x: lake.rx * 1.14 + offset, z: lake.rz * 0.66 + offset * 0.1 },
-    { x: lake.rx * 1.34 + offset, z: lake.rz * 1.02 + offset * 0.12 },
-    { x: lake.rx * 1.72 + offset, z: lake.rz * 1.34 + offset * 0.14 }
-  ];
+function routeAngleDelta(from, to, direction = 1) {
+  const full = Math.PI * 2;
+  if (direction < 0) return -((from - to + full) % full);
+  return (to - from + full) % full;
+}
+
+function shoreRoutePoint(angle, radius = 1.14) {
+  return {
+    x: Math.cos(angle) * lake.rx * radius,
+    z: Math.sin(angle) * lake.rz * radius
+  };
+}
+
+function escapeRouteForVisitor(start, visitor) {
+  const radius = clamp(visitor.patrolRadius || lakeRadius(start.x, start.z), 1.12, playableLakeMargin);
+  const direction = visitor.patrolDirection || state.boss?.patrolDirection || 1;
+  const startAngle = ellipseAngle(start);
+  const towerAngle = ellipseAngle(boyaTowerFront);
+  const delta = routeAngleDelta(startAngle, towerAngle, direction);
+  const route = [{ x: start.x, z: start.z }];
+  const steps = Math.max(5, Math.ceil(Math.abs(delta) / 0.32));
+  for (let i = 1; i <= steps; i += 1) {
+    route.push(shoreRoutePoint(startAngle + delta * (i / steps), radius));
+  }
+  route.push(
+    { x: boyaTowerFront.x, z: boyaTowerFront.z },
+    { x: lake.rx * 1.34, z: lake.rz * 1.02 },
+    { x: lake.rx * 1.72, z: lake.rz * 1.34 }
+  );
+  return route;
 }
 
 function pointOnRoute(route, progress) {
@@ -2977,7 +2963,7 @@ function startEndingCutscene() {
   const visitors = state.visitors.length ? state.visitors : [state.boss].filter(Boolean);
   const escapees = visitors.map((visitor, index) => {
     const start = { x: visitor.x, z: visitor.z };
-    const route = escapeRouteForVisitor(start, index, visitors.length);
+    const route = escapeRouteForVisitor(start, visitor);
     visitor.cooldown = bossEscapeDuration + 2;
     visitor.throwWindup = 0;
     visitor.nextTarget = null;
@@ -2994,6 +2980,7 @@ function startEndingCutscene() {
     t: 0,
     duration: bossEscapeDuration,
     escapees,
+    nextLine: 0,
     cameraFrom: { x: state.duck.x - 2.4, y: state.duck.eyeY + 1.15, z: state.duck.z + 4.8 },
     cameraTo: { x: lake.rx * 0.9, y: 7.4, z: lake.rz * 0.84 },
     lookAt: { x: lake.rx * 1.16, y: 1.5, z: lake.rz * 0.72 }
@@ -3020,6 +3007,16 @@ function updateEndingCutscene(dt) {
     escapee.visitor.baseX = escapee.visitor.x;
     escapee.visitor.baseZ = escapee.visitor.z;
     escapee.visitor.drift += dt * 8;
+  }
+  const bossEscapee = cutscene.escapees.find((escapee) => escapee.visitor.isBoss);
+  while (bossEscapee && cutscene.nextLine < bossEscapeLines.length && cutscene.t >= bossEscapeLines[cutscene.nextLine].at) {
+    const line = bossEscapeLines[cutscene.nextLine];
+    addText(line.text, bossEscapee.visitor.x, bossEscapee.visitor.z, "#b33327", 2.55, {
+      fontSize: 46,
+      scale: { x: 3.4, y: 0.76 },
+      strokeWidth: 8
+    });
+    cutscene.nextLine += 1;
   }
   if (cutscene.t >= cutscene.duration) completeEndingCutscene();
 }
