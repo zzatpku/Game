@@ -100,7 +100,7 @@ const recycleSpots = [-2.45, -1.45, -0.45, 0.55, 1.55, 2.55].map((a) => ({
   x: Math.cos(a) * lake.rx * 1.19,
   z: Math.sin(a) * lake.rz * 1.19
 }));
-const bridgePillarObstacles = [-lake.rz * 0.27, 0, lake.rz * 0.27].flatMap((z) => (
+const bridgePillarObstacles = [-lake.rz * 0.27, 0, lake.rz * 0.15].flatMap((z) => (
   [-1.3, 1.3].map((x) => ({
     x: islandCenter.x + x,
     z: bridgeCenterZ + z,
@@ -1475,7 +1475,8 @@ function addBridge() {
     }
   }
   const archMaterial = new THREE.MeshStandardMaterial({ color: 0xd8c7a0, roughness: 0.84 });
-  for (const z of [-lake.rz * 0.27, 0, lake.rz * 0.27]) {
+  const archZPositions = [-lake.rz * 0.27, 0, lake.rz * 0.15];
+  for (const z of archZPositions) {
     for (const x of [-1.3, 1.3]) {
       const pier = new THREE.Mesh(new THREE.BoxGeometry(0.36, bridgeDeckTopY - 0.06, 0.44), archMaterial);
       pier.position.set(x, (bridgeDeckTopY - 0.06) / 2, z);
@@ -1836,7 +1837,7 @@ function addIsland() {
   group.position.set(islandCenter.x, islandLiftY, islandCenter.z);
   const base = new THREE.Mesh(
     new THREE.CylinderGeometry(9.3, 9.85, 0.48, 72),
-    new THREE.MeshStandardMaterial({ color: 0xd2c27d, roughness: 0.9 })
+    new THREE.MeshStandardMaterial({ color: 0xd2c27d, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })
   );
   base.scale.z = 0.59;
   base.castShadow = true;
@@ -1844,7 +1845,7 @@ function addIsland() {
   group.add(base);
   const grass = new THREE.Mesh(
     new THREE.CylinderGeometry(8.25, 8.72, 0.16, 72),
-    new THREE.MeshStandardMaterial({ color: 0x89a95a, roughness: 0.9 })
+    new THREE.MeshStandardMaterial({ color: 0x89a95a, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })
   );
   grass.position.y = 0.2;
   grass.scale.z = 0.58;
