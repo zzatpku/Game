@@ -37,7 +37,8 @@ const ui = {
   stageIntroModal: document.querySelector("#stageIntroModal"),
   stageIntroTitle: document.querySelector("#stageIntroTitle"),
   stageIntroBody: document.querySelector("#stageIntroBody"),
-  stageIntroButton: document.querySelector("#stageIntroButton")
+  stageIntroButton: document.querySelector("#stageIntroButton"),
+  fullscreenButton: document.querySelector("#fullscreenButton")
 };
 
 const oldLake = { cx: 642, cy: 375, rx: 495, ry: 255 };
@@ -68,6 +69,7 @@ const powerupSpawnInterval = 30;
 const powerupSlotCount = 3;
 const bossName = "污染煽动者 王乱丢";
 const bossShortName = "王乱丢";
+const bossEscapeDuration = 7.2;
 const debugStage = getDebugStage();
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
@@ -111,7 +113,7 @@ const trashTypes = [
   { name: "面包袋", color: 0xe3b34c, size: [0.36, 0.14, 0.26] }
 ];
 const powerupTypes = [
-  { id: "cleaner", name: "净水叶", short: "净", duration: 15, color: 0x2d8064, text: "15s 净水捡拾" },
+  { id: "cleaner", name: "净水叶", short: "净", duration: 30, color: 0x2d8064, text: "30s 净化捡拾，不能投掷" },
   { id: "bandolier", name: "扩容带", short: "弹", duration: 30, color: 0xe3a72f, text: "30s 弹带 +3" },
   { id: "freeze", name: "定身石", short: "停", duration: 10, color: 0x315f96, text: "10s 定住 Boss" },
   { id: "stamina", name: "莲子糖", short: "体", duration: 30, color: 0xd24d3f, text: "30s 无限体力" }
@@ -119,35 +121,62 @@ const powerupTypes = [
 
 const stageBriefings = {
   1: {
-    title: "第一阶段: 清理未名湖",
-    intro: "目标是清理 5 件漂浮垃圾，先熟悉巡湖和回收路线。",
+    title: "第一阶段: 未名湖的第一天",
+    background: [
+      "未名湖原本是鸭子的家。清晨的水面很安静，岸边有行人、树影和倒映的建筑。",
+      "最近湖面变得不对劲: 游客把纸杯、塑料瓶和包装袋丢进水里，还有人把食物随手撒向湖面。鸭子发现，自己必须先把家门口守住。"
+    ],
+    goal: "清理 5 件漂浮垃圾，把它们叼到岸边绿色回收点。让湖水恢复清澈，也让游客注意到这只守湖的鸭子。",
     rules: [
       "WASD 移动，左/右方向键或拖动画面转视角。",
       "Space 靠近垃圾时叼起，靠近岸边绿色回收点时投放。",
-      "Shift 冲刺会消耗体力；空嘴按 Space 鸣叫，提醒附近游客。",
-      "清澈度归零会失败。"
+      "第一阶段鸭子只能鸣叫，游客还看不懂它的意思，鸣叫不会阻止乱丢。",
+      "Shift 可以短暂冲刺；清澈度归零会失败。"
     ]
   },
   2: {
-    title: "第二阶段: 游客压力加大",
-    intro: "目标是累计清理 15 件垃圾，游客投掷会更频繁。",
+    title: "第一阶段中段: 岸边开始骚动",
+    background: [
+      "鸭子的巡湖行动被更多游客看见了。有些人开始不好意思，有些人却觉得这只是热闹，乱丢和投喂变得更频繁。",
+      "当鸭子连续把垃圾送回岸边，一位路过的北大学生注意到了它的动作，给它做了一块小告示牌。鸭子不只是在嘎嘎叫，它开始替未名湖说话。"
+    ],
+    goal: "继续完成 15 点清理进度。捡垃圾仍然计 1 点；靠近游客后按 Space，鸭子会鸣叫并举起告示牌提醒游客。游客看到告示牌后会在 20 秒内停止扔垃圾，并奖励 2 点清理进度。",
     rules: [
       "继续用 Space 捡垃圾和投放到回收点。",
       "红色污染热点会让湖水下降更快，优先清理。",
-      "连续快速回收会获得连击回复清澈度。",
-      "Esc 暂停，Shift 冲刺，鸣叫或告示牌可以延缓游客乱丢。"
+      "靠近游客后按 Space 使用告示牌；同一名游客被提醒后会冷静 20 秒。",
+      "Esc 暂停，Shift 冲刺；连续快速回收会获得连击回复清澈度。"
     ]
   },
   3: {
-    title: "第三阶段: Boss 战",
-    intro: `${bossName}出现。用湖里的垃圾当弹药，约 40 次命中可以赶走 Boss。`,
+    title: "第一阶段终点: 王乱丢出现",
+    background: [
+      `${bossName}带着几个跟风游客来到湖边。他不只是乱丢垃圾，还煽动旁人把污染当成玩笑。`,
+      "未名湖已经被清理出一条隐约的水路，但通往朗润湖的入口仍被残余垃圾堵住。鸭子必须在湖面彻底失守前，把王乱丢赶走。"
+    ],
+    goal: "用湖里的垃圾当弹药攻击王乱丢。击败他后，堵住朗润湖通道的垃圾会被冲开。",
     rules: [
       "Space 捡垃圾；左键投掷已携带垃圾攻击 Boss；落空的垃圾会回到湖里。",
       "Boss 每 30 秒周期召来 1 名弱跟随游客；清澈度到 0% 后鸭子每秒掉 2 血。",
       `湖心岛每 30 秒刷新 1 个道具: ${powerupTypes.map((type) => `${type.name}=${type.text}`).join("；")}。`,
+      "净水叶会立刻净化已叼垃圾，30 秒内只能净化捡拾，不能把垃圾当子弹投掷。",
       "鸭子最多存 3 个道具，按 1/2/3 使用；屏幕红色越明显表示鸭子血量越危险。"
     ]
   }
+};
+
+const endingBriefing = {
+  title: "朗润湖通道打开",
+  background: [
+    "王乱丢被击退后，再也没有人敢把未名湖当成垃圾桶。他带着跟风游客慌忙离开，岸边重新安静下来。",
+    "鸭子把最后的垃圾清走，湖底原本被堵住的水道开始透出清亮的流光。水流从未名湖深处缓缓推开障碍，一条通往朗润湖生态区的通道显露出来。"
+  ],
+  goal: "第一阶段完成。游戏将进入第二阶段: 朗润湖生态区（尚未完成）。",
+  rules: [
+    "第二阶段计划加入更大的朗润湖区域。",
+    "后续将出现多动物切换、水下探索和生态科研误会与合作的剧情。"
+  ],
+  button: "再玩一次"
 };
 
 let state;
@@ -217,6 +246,7 @@ const refs = {
   powerup: null,
   floatTexts: new Set(),
   rings: new Set(),
+  powerupEffects: new Set(),
   targetBeacon: null,
   waterSurface: null,
   waterVertices: null,
@@ -254,7 +284,9 @@ function reset() {
     result: "playing",
     paused: false,
     stageIntro: false,
+    storyModal: null,
     bossIntro: null,
+    endingCutscene: null,
     pendingRound: null,
     upgrade: null,
     upgradeLevels: {
@@ -286,6 +318,7 @@ function reset() {
     ripples: [],
     soundWaves: [],
     floatTexts: [],
+    powerupEffects: [],
     thrown: [],
     boss: null,
     bossPhase: "idle",
@@ -691,6 +724,7 @@ function clearDynamic() {
   refs.thrown.clear();
   refs.floatTexts.clear();
   refs.rings.clear();
+  refs.powerupEffects.clear();
   refs.targetBeacon = null;
   refs.powerup = null;
 }
@@ -1227,7 +1261,7 @@ function addForestedSlopes() {
     const row = i % 4;
     const x = lake.rx * 1.05 + (i % 18) * 2.35 + Math.sin(i * 1.7) * 0.75;
     const z = -lake.rz * 0.72 + row * 5.6 + Math.cos(i * 0.9) * 1.2;
-    const y = 1.05 + row * 0.42 + (i % 5) * 0.08;
+    const y = terrainHeightAt(x, z) + 0.03;
     addSlopeTree(x, y, z, 1.15 + (i % 4) * 0.16, i % 5 === 0, i % 2 === 0 ? broadMaterial : darkBroadMaterial);
   }
 
@@ -1235,14 +1269,16 @@ function addForestedSlopes() {
     const row = i % 5;
     const x = lake.rx * 1.18 + (i % 16) * 2.45 + Math.cos(i * 1.19) * 0.8;
     const z = lake.rz * 0.04 + row * 4.8 + Math.sin(i * 0.83) * 1.0;
-    const y = 1.85 + row * 0.34 + (i % 4) * 0.12;
+    const y = terrainHeightAt(x, z) + 0.03;
     addSlopeTree(x, y, z, 1.28 + (i % 5) * 0.16, i % 6 === 0, i % 3 === 0 ? darkBroadMaterial : broadMaterial);
   }
 
   for (let i = 0; i < 34; i += 1) {
     const row = i % 3;
     const patch = new THREE.Mesh(canopyPatchGeometry, patchMaterials[i % patchMaterials.length]);
-    patch.position.set(lake.rx * 1.28 + (i % 12) * 3.45, 2.45 + row * 0.36, lake.rz * 0.16 + row * 6.2 + Math.sin(i) * 1.1);
+    const x = lake.rx * 1.28 + (i % 12) * 3.45;
+    const z = lake.rz * 0.16 + row * 6.2 + Math.sin(i) * 1.1;
+    patch.position.set(x, terrainHeightAt(x, z) + 1.2 + row * 0.16, z);
     patch.scale.set(2.15 + (i % 4) * 0.32, 0.72 + (i % 3) * 0.08, 1.35 + (i % 5) * 0.22);
     patch.rotation.set((Math.random() - 0.5) * 0.16, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.16);
     patch.castShadow = true;
@@ -2162,6 +2198,31 @@ function addSoundWave(x, z, radius, color = 0xd24d3f) {
   state.soundWaves.push({ mesh: ring, r: 0.24, max: radius, a: 1, speed: 4.8 });
 }
 
+function addPowerupUseEffect(type) {
+  const color = type.color || 0x2d8064;
+  const group = new THREE.Group();
+  group.position.set(state.duck.x, terrainHeightAt(state.duck.x, state.duck.z) + 0.08, state.duck.z);
+  const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.86, depthWrite: false });
+  const beamMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32, depthWrite: false });
+  const coreMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.035, 8, 72), ringMaterial);
+  ring.rotation.x = Math.PI / 2;
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.025, 8, 72), ringMaterial.clone());
+  ring2.rotation.x = Math.PI / 2;
+  ring2.position.y = 0.08;
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.5, 2.8, 18, 1, true), beamMaterial);
+  beam.position.y = 1.35;
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), coreMaterial);
+  core.position.y = 1.15;
+  group.add(ring, ring2, beam, core);
+  dynamic.add(group);
+  refs.powerupEffects.add(group);
+  state.powerupEffects.push({ mesh: group, type, age: 0, duration: 1.45, ring, ring2, beam, core });
+  addText(`${type.name}生效`, state.duck.x, state.duck.z, `#${color.toString(16).padStart(6, "0")}`);
+  addRipple(state.duck.x, state.duck.z, color);
+  addDroplets(state.duck.x, state.duck.z, color);
+}
+
 function nearestTrash() {
   if (state.trash.length === 0) return null;
   let best = state.trash[0];
@@ -2220,6 +2281,14 @@ function aimAtBoss() {
 
 function throwTrashAtBoss() {
   if (currentStage().mode !== "boss" || !state.boss || state.boss.health <= 0 || carryingCount() === 0) return false;
+  if (hasActiveEffect("cleaner")) {
+    const cleanedCount = state.duck.carrying.length;
+    state.duck.carrying = [];
+    if (cleanedCount > 0) state.clarity = Math.min(100, state.clarity + cleanedCount * 4.5);
+    addText("净水叶生效中，不能投掷", state.duck.x, state.duck.z, "#2d8064");
+    addPowerupUseEffect(powerupTypes.find((type) => type.id === "cleaner"));
+    return true;
+  }
   const aim = aimAtBoss();
   const item = state.duck.carrying.shift();
   const damage = bossTrashDamage;
@@ -2354,18 +2423,27 @@ function enterStage(stageId, options = {}) {
   state.stageIntro = false;
   state.bossIntro = null;
   state.duck.carrying = [];
+  state.duck.sign = stage.id >= 2;
   for (const visitor of state.visitors) visitor.timer = Math.min(visitor.timer, visitorThrowDelay() * 0.62);
   if (stage.mode === "boss") setupBossStage();
   if (!options.silent) addText(`${stage.name}开始`, state.duck.x, state.duck.z, stage.mode === "boss" ? "#b33327" : "#2d8064");
+  if (!options.silent && stage.id === 2) addText("小告示牌戴好了", state.duck.x, state.duck.z, "#b45c12");
   showStageIntro(stage);
 }
 
 function stageBriefingHtml(stage) {
   const briefing = stageBriefings[stage.id];
+  return briefingHtml(briefing);
+}
+
+function briefingHtml(briefing) {
   if (!briefing) return "";
+  const background = briefing.background || [];
+  const rules = briefing.rules || [];
   return `
-    <p><strong>${briefing.intro}</strong></p>
-    <ul>${briefing.rules.map((rule) => `<li>${rule}</li>`).join("")}</ul>
+    ${background.map((line) => `<p>${line}</p>`).join("")}
+    <p class="stage-goal"><strong>目标:</strong> ${briefing.goal}</p>
+    ${rules.length ? `<ul>${rules.map((rule) => `<li>${rule}</li>`).join("")}</ul>` : ""}
   `;
 }
 
@@ -2374,6 +2452,7 @@ function showStageIntro(stage) {
   const briefing = stageBriefings[stage.id];
   if (!briefing) return;
   state.stageIntro = true;
+  state.storyModal = null;
   state.bossIntro = null;
   state.duck.vx = 0;
   state.duck.vz = 0;
@@ -2385,10 +2464,35 @@ function showStageIntro(stage) {
   document.exitPointerLock?.();
 }
 
+function showStoryModal(briefing, action = "close") {
+  if (!ui.stageIntroModal) return;
+  state.stageIntro = true;
+  state.storyModal = { action };
+  state.bossIntro = null;
+  state.endingCutscene = null;
+  state.duck.vx = 0;
+  state.duck.vz = 0;
+  keys.clear();
+  ui.stageIntroTitle.textContent = briefing.title;
+  ui.stageIntroBody.innerHTML = briefingHtml(briefing);
+  ui.stageIntroButton.textContent = briefing.button || "继续";
+  ui.stageIntroModal.hidden = false;
+  document.exitPointerLock?.();
+}
+
 function startStageAfterIntro() {
   if (!state?.stageIntro) return;
   resumeAudio();
+  const storyAction = state.storyModal?.action;
+  if (storyAction === "reset") {
+    state.stageIntro = false;
+    state.storyModal = null;
+    ui.stageIntroModal.hidden = true;
+    reset();
+    return;
+  }
   state.stageIntro = false;
+  state.storyModal = null;
   ui.stageIntroModal.hidden = true;
   if (currentStage().mode === "boss") startBossIntro();
 }
@@ -2536,12 +2640,19 @@ function usePowerupSlot(index) {
   resumeAudio();
   state.powerupSlots[index] = null;
   state.activeEffects[type.id] = Math.max(activeEffectRemaining(type.id), type.duration);
+  if (type.id === "cleaner" && state.duck.carrying.length > 0) {
+    const cleanedCount = state.duck.carrying.length;
+    state.duck.carrying = [];
+    state.clarity = Math.min(100, state.clarity + cleanedCount * 4.5);
+    addText(`已叼垃圾被净化 x${cleanedCount}`, state.duck.x, state.duck.z, "#2d8064");
+  }
   if (type.id === "freeze" && state.boss) {
     state.boss.cooldown = Math.max(state.boss.cooldown || 0, type.duration);
     state.boss.throwWindup = 0;
     state.boss.nextTarget = null;
   }
   if (type.id === "stamina") state.duck.stamina = state.duck.maxStamina;
+  addPowerupUseEffect(type);
   addText(`使用${type.name}`, state.duck.x, state.duck.z, "#315f96");
   playSuccess();
   return true;
@@ -2576,6 +2687,7 @@ function performAction() {
   resumeAudio();
   if (state.paused || state.stageIntro || state.bossIntro) return;
   if (state.result !== "playing") {
+    if (state.result === "ending") return;
     if (state.result !== "upgrade") reset();
     return;
   }
@@ -2601,10 +2713,6 @@ function performAction() {
     addRipple(bin.spot.x, bin.spot.z, 0x2d8064);
     addDroplets(bin.spot.x, bin.spot.z, 0x9de7cf);
     playDrop();
-    if (state.score >= 4 && !duck.sign) {
-      duck.sign = true;
-      addText("学生递来了小告示牌", duck.x, duck.z, "#b45c12");
-    }
     maybeAdvanceRound();
     return;
   }
@@ -2651,34 +2759,52 @@ function performAction() {
   }
 
   playQuack();
-  const radius = (state.duck.sign ? 4.4 : 3.2) + state.duck.quackBoost * 0.03;
+  const stage = currentStage();
+  const signWarningEnabled = stage.id >= 2 && state.duck.sign;
+  const radius = (signWarningEnabled ? 4.4 : 3.2) + state.duck.quackBoost * 0.03;
   let warnedCount = 0;
+  let bossWarned = 0;
+  let unheardCount = 0;
   for (const v of state.visitors) {
-    if (dist(duck, v) <= radius) {
-      if (v.isBoss) {
-        v.cooldown = Math.max(v.cooldown, 1.2);
-        v.shame = 2.2;
-        v.throwWindup = 0;
-        v.nextTarget = null;
-        warnedCount += 1;
-        addText("短暂压制", v.x, v.z, "#b33327");
-        continue;
-      }
-      v.cooldown = Math.max(v.cooldown, (state.duck.sign ? 40 : 28) + state.duck.quackBoost * 0.1);
+    if (dist(duck, v) > radius) continue;
+    if (v.isBoss) {
+      v.cooldown = Math.max(v.cooldown, 1.2);
       v.shame = 2.2;
       v.throwWindup = 0;
       v.nextTarget = null;
-      v.timer += (state.duck.sign ? 12 : 8) + state.duck.quackBoost * 0.08;
+      bossWarned += 1;
+      addText("短暂压制", v.x, v.z, "#b33327");
+      continue;
+    }
+    if (!signWarningEnabled) {
+      unheardCount += 1;
+      continue;
+    }
+    if (v.cooldown <= 0) {
+      v.cooldown = 20;
+      v.shame = 2.2;
+      v.throwWindup = 0;
+      v.nextTarget = null;
       warnedCount += 1;
-      addText(state.duck.sign ? "请勿投喂与乱丢" : "嘎!", v.x, v.z, "#b33327");
+      addText("看到告示牌，停止乱丢 20s", v.x, v.z, "#b33327");
     }
   }
-  addRipple(duck.x, duck.z, warnedCount ? 0xd24d3f : 0x315f96);
-  addSoundWave(duck.x, duck.z, radius, warnedCount ? 0xd24d3f : 0x315f96);
+  addRipple(duck.x, duck.z, warnedCount || bossWarned ? 0xd24d3f : 0x315f96);
+  addSoundWave(duck.x, duck.z, radius, warnedCount || bossWarned ? 0xd24d3f : 0x315f96);
   if (warnedCount > 0) {
-    state.awareness = Math.min(100, state.awareness + warnedCount * (state.duck.sign ? 8 : 4));
-    addText(`提醒 ${warnedCount} 人`, duck.x, duck.z, "#b33327");
+    if (stage.id === 2) {
+      const reward = warnedCount * 2;
+      state.score += reward;
+      addText(`告示牌提醒 +${reward}`, duck.x, duck.z, "#b33327");
+    } else {
+      addText(`提醒 ${warnedCount} 人`, duck.x, duck.z, "#b33327");
+    }
+    state.awareness = Math.min(100, state.awareness + warnedCount * 8);
     maybeAdvanceRound();
+  } else if (bossWarned > 0) {
+    addText("嘎!", duck.x, duck.z, "#b33327");
+  } else if (unheardCount > 0 && stage.id === 1) {
+    addText("游客没看懂", duck.x, duck.z, "#315f96");
   } else {
     addText("嘎", duck.x, duck.z, "#315f96");
   }
@@ -2704,6 +2830,15 @@ function performThrowAction(event) {
 }
 
 function update(dt) {
+  if (state.endingCutscene) {
+    state.time += dt;
+    updateEndingCutscene(dt);
+    updateParticles(dt);
+    syncScene();
+    updateCamera(dt);
+    updateUi();
+    return;
+  }
   if (state.stageIntro || state.bossIntro) {
     state.time += dt;
     updateBossIntro(dt);
@@ -2756,17 +2891,85 @@ function update(dt) {
 }
 
 function openChannelAndWin() {
-  if (state.result === "won") return;
+  if (state.result === "won" || state.result === "ending") return;
   clearThrownProjectiles();
   clearBossProjectiles();
   clearGroundPowerup();
   state.trash = [];
   state.round = totalStages;
-  state.result = "won";
+  state.result = "ending";
   state.clarity = Math.max(state.clarity, 72);
-  addText("重点游客离开", lake.rx * 0.72, -lake.rz * 0.98, "#2d8064");
-  addText("胜利", state.duck.x, state.duck.z, "#2d8064");
+  startEndingCutscene();
+  playSuccess();
+}
+
+function startEndingCutscene() {
+  const visitors = state.visitors.length ? state.visitors : [state.boss].filter(Boolean);
+  const escapees = visitors.map((visitor, index) => {
+    const start = { x: visitor.x, z: visitor.z };
+    const baseAngle = -0.1 + (index - (visitors.length - 1) / 2) * 0.16;
+    const endRadius = playableLakeMargin + 0.72 + index * 0.04;
+    const end = {
+      x: Math.cos(baseAngle) * lake.rx * endRadius,
+      z: Math.sin(baseAngle) * lake.rz * endRadius
+    };
+    visitor.cooldown = bossEscapeDuration + 2;
+    visitor.throwWindup = 0;
+    visitor.nextTarget = null;
+    visitor.shame = bossEscapeDuration;
+    return {
+      visitor,
+      start,
+      end,
+      delay: visitor.isBoss ? 0 : 0.34 + index * 0.16,
+      wobble: Math.random() * Math.PI * 2
+    };
+  });
+  state.endingCutscene = {
+    t: 0,
+    duration: bossEscapeDuration,
+    escapees,
+    cameraFrom: { x: state.duck.x - 2.4, y: state.duck.eyeY + 1.15, z: state.duck.z + 4.8 },
+    cameraTo: { x: lake.rx * 0.5, y: 7.1, z: -lake.rz * 0.74 },
+    lookAt: { x: lake.rx * 1.2, y: 1.2, z: -lake.rz * 0.12 }
+  };
+  keys.clear();
+  state.duck.vx = 0;
+  state.duck.vz = 0;
+  addText(`${bossShortName}逃走了`, state.boss?.x || state.duck.x, state.boss?.z || state.duck.z, "#b33327");
+  addText("跟随游客也离开岸边", state.duck.x, state.duck.z, "#2d8064");
+  document.exitPointerLock?.();
+}
+
+function updateEndingCutscene(dt) {
+  const cutscene = state.endingCutscene;
+  if (!cutscene) return;
+  cutscene.t += dt;
+  for (const escapee of cutscene.escapees) {
+    const local = clamp((cutscene.t - escapee.delay) / Math.max(0.1, cutscene.duration - escapee.delay - 0.7), 0, 1);
+    const t = easeInOutCubic(local);
+    const sideStep = Math.sin(local * Math.PI * 5 + escapee.wobble) * (1 - local) * 0.34;
+    const dx = escapee.end.x - escapee.start.x;
+    const dz = escapee.end.z - escapee.start.z;
+    const len = Math.max(0.001, Math.hypot(dx, dz));
+    escapee.visitor.x = escapee.start.x + dx * t - dz / len * sideStep;
+    escapee.visitor.z = escapee.start.z + dz * t + dx / len * sideStep;
+    escapee.visitor.baseX = escapee.visitor.x;
+    escapee.visitor.baseZ = escapee.visitor.z;
+    escapee.visitor.drift += dt * 8;
+  }
+  if (cutscene.t >= cutscene.duration) completeEndingCutscene();
+}
+
+function completeEndingCutscene() {
+  state.endingCutscene = null;
+  state.visitors = [];
+  state.boss = null;
+  state.result = "won";
+  state.clarity = 100;
   addRipple(lake.rx * 0.72, -lake.rz * 0.98, 0x2d8064);
+  addText("朗润湖通道打开", lake.rx * 0.72, -lake.rz * 0.98, "#2d8064");
+  showStoryModal(endingBriefing, "reset");
   playSuccess();
 }
 
@@ -3122,6 +3325,30 @@ function updateParticles(dt) {
   for (const wave of state.soundWaves.filter((wave) => wave.a <= 0 || wave.r >= wave.max)) removeMesh(wave.mesh);
   state.soundWaves = state.soundWaves.filter((wave) => wave.a > 0 && wave.r < wave.max);
 
+  for (const effect of state.powerupEffects) {
+    effect.age += dt;
+    const t = clamp(effect.age / effect.duration, 0, 1);
+    const fade = 1 - t;
+    effect.mesh.position.x += (state.duck.x - effect.mesh.position.x) * Math.min(1, dt * 5);
+    effect.mesh.position.z += (state.duck.z - effect.mesh.position.z) * Math.min(1, dt * 5);
+    effect.mesh.position.y = terrainHeightAt(effect.mesh.position.x, effect.mesh.position.z) + 0.08;
+    effect.ring.scale.setScalar(1 + t * 3.2);
+    effect.ring2.scale.setScalar(1 + t * 2.4);
+    effect.ring.material.opacity = 0.86 * fade;
+    effect.ring2.material.opacity = 0.62 * fade;
+    effect.beam.material.opacity = 0.32 * fade;
+    effect.beam.scale.set(1 + t * 0.6, 1 + t * 0.35, 1 + t * 0.6);
+    effect.core.position.y = 1.15 + t * 1.1;
+    effect.core.rotation.y += dt * 5.8;
+    effect.core.material.opacity = 0.72 * fade;
+  }
+  for (const effect of state.powerupEffects.filter((effect) => effect.age >= effect.duration)) {
+    dynamic.remove(effect.mesh);
+    refs.powerupEffects.delete(effect.mesh);
+    disposeObject(effect.mesh);
+  }
+  state.powerupEffects = state.powerupEffects.filter((effect) => effect.age < effect.duration);
+
   for (const text of state.floatTexts) {
     text.y += dt * 0.65;
     text.a -= dt * 0.78;
@@ -3254,6 +3481,13 @@ function syncScene(force = false) {
       mesh.userData.healthFill.position.x = (pct - 1) * 0.43;
     }
   }
+  for (const [id, mesh] of [...refs.visitors.entries()]) {
+    if (!state.visitors.some((visitor) => visitor.id === id)) {
+      dynamic.remove(mesh);
+      disposeObject(mesh);
+      refs.visitors.delete(id);
+    }
+  }
 
   for (const item of state.thrown) {
     if (!item.mesh) {
@@ -3305,8 +3539,27 @@ function updateBossIntroCamera() {
   return true;
 }
 
+function updateEndingCamera() {
+  const cutscene = state.endingCutscene;
+  if (!cutscene) return false;
+  const raw = clamp(cutscene.t / cutscene.duration, 0, 1);
+  const t = easeInOutCubic(raw);
+  const x = cutscene.cameraFrom.x + (cutscene.cameraTo.x - cutscene.cameraFrom.x) * t;
+  const y = cutscene.cameraFrom.y + (cutscene.cameraTo.y - cutscene.cameraFrom.y) * t + Math.sin(raw * Math.PI) * 1.2;
+  const z = cutscene.cameraFrom.z + (cutscene.cameraTo.z - cutscene.cameraFrom.z) * t;
+  const leader = cutscene.escapees.find((escapee) => escapee.visitor.isBoss)?.visitor || cutscene.escapees[0]?.visitor;
+  const look = leader
+    ? { x: leader.x, y: terrainHeightAt(leader.x, leader.z) + 1.55, z: leader.z }
+    : cutscene.lookAt;
+  camera.position.set(x, y, z);
+  camera.lookAt(look.x, look.y, look.z);
+  if (refs.duckView) refs.duckView.visible = false;
+  return true;
+}
+
 function updateCamera(dt) {
   if (updateBossIntroCamera()) return;
+  if (updateEndingCamera()) return;
   const duck = state.duck;
   const shake = state.cameraShake > 0 ? (Math.random() - 0.5) * state.cameraShake * 0.16 : 0;
   const eyeY = duck.eyeY ?? duckEyeTargetY(duck.x, duck.z, duck.surface);
@@ -3447,6 +3700,13 @@ function updateUi() {
   updatePowerupUi(inBossStage && state.result === "playing");
   updatePauseMenu();
 
+  if (state.result === "ending") {
+    ui.actionText.textContent = `${bossShortName}正在逃走`;
+    ui.missionText.textContent = "看清污染者离开未名湖";
+    ui.nearestText.textContent = "游客正在撤离岸边";
+    ui.actionButton.textContent = "观看动画";
+    return;
+  }
   if (state.result === "won") {
     ui.actionText.textContent = "胜利";
     ui.missionText.textContent = "进入第二阶段（尚未完成）";
@@ -3478,14 +3738,15 @@ function updateUi() {
   let action = "巡湖中";
   if (nearPowerup && nearPowerup.d < 1.55) action = `拾取${nearPowerup.item.type.name}`;
   else if (carryingCount() > 0 && nearBin.d < 3.0) action = "投放到回收点";
+  else if (inBossStage && carryingCount() > 0 && hasActiveEffect("cleaner")) action = "净水叶生效中，不能投掷";
   else if (inBossStage && carryingCount() > 0) action = bossAim.locked ? "左键投掷重点游客" : "左键投掷会落水";
   else if (carryingCount() > 0) action = `叼着${carriedLabel(duck.carrying)} (${carryingCount()}/${effectiveCarryCapacity()})`;
   else if (nearTrash && nearTrash.d < 1.45) action = hasActiveEffect("cleaner")
     ? `净化${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`
     : `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
-  else if (nearVisitor && nearVisitor.d < (nearVisitor.visitor?.isBoss ? 4.8 : (duck.sign ? 2.45 : 1.8))) action = nearVisitor.visitor?.isBoss ? "鸣叫打断重点游客" : (duck.sign ? "举牌提醒游客" : "鸣叫提醒游客");
+  else if (nearVisitor && nearVisitor.d < (nearVisitor.visitor?.isBoss ? 4.8 : (duck.sign ? 2.45 : 1.8))) action = nearVisitor.visitor?.isBoss ? "鸣叫打断重点游客" : (duck.sign ? "举牌提醒游客" : "鸣叫（游客看不懂）");
   ui.actionText.textContent = action;
-  ui.actionButton.textContent = inBossStage && carryingCount() > 0 && nearBin.d >= 3.0 ? "鸣叫" : (action === "巡湖中" ? "鸣叫" : "行动");
+  ui.actionButton.textContent = inBossStage && carryingCount() > 0 && nearBin.d >= 3.0 && !hasActiveEffect("cleaner") ? "鸣叫" : (action === "巡湖中" ? "鸣叫" : "行动");
 
   if (nearPowerup) {
     ui.nearestText.textContent = `岛上道具 ${nearPowerup.item.type.name}: ${nearPowerup.item.type.text}`;
@@ -3498,12 +3759,14 @@ function updateUi() {
     ui.nearestText.textContent = "未发现";
   }
 
-  if (!duck.sign && state.score >= 4) ui.missionText.textContent = "告示牌已解锁";
+  if (hasActiveEffect("cleaner")) ui.missionText.textContent = "净水叶生效中: 捡到垃圾会直接净化，不能投掷";
+  else if (stage.id === 1 && nearVisitor && nearVisitor.d < 2.0) ui.missionText.textContent = "第一阶段鸣叫还不能阻止游客";
   else if (state.combo > 1) ui.missionText.textContent = `连击中: ${state.combo} 次`;
   else if (carryingCount() > 0 && nearBin.d < 3.0) ui.missionText.textContent = "Space 投放到垃圾桶";
   else if (nearPowerup && nearPowerup.d < 1.55) ui.missionText.textContent = `Space 收下；${nearPowerup.item.type.text}`;
   else if (carryingCount() > 0 && !carryingFull()) ui.missionText.textContent = `还可以再叼 ${effectiveCarryCapacity() - carryingCount()} 件`;
   else if (carryingCount() > 0) ui.missionText.textContent = inBossStage ? "左键投掷；命中不返湖，落空会回湖" : "送到岸边绿色回收点";
+  else if (stage.id === 2 && duck.sign && nearVisitor && nearVisitor.d < 4.4) ui.missionText.textContent = "Space 举牌提醒: 游客停扔 20s，清理进度 +2";
   else if (stage.mode === "boss") {
     const minions = state.visitors.filter((visitor) => visitor.isMinion).length;
     const phase = bossPhaseLabel();
@@ -3555,6 +3818,34 @@ function requestPointerLockSafely() {
   } catch {
     // Pointer lock can be unavailable in automated or embedded contexts.
   }
+}
+
+function isFullscreen() {
+  return document.fullscreenElement === document.documentElement;
+}
+
+function updateFullscreenButton() {
+  if (!ui.fullscreenButton) return;
+  const active = isFullscreen();
+  ui.fullscreenButton.textContent = active ? "退出全屏" : "全屏";
+  ui.fullscreenButton.setAttribute("aria-pressed", String(active));
+}
+
+async function toggleFullscreen() {
+  if (!document.fullscreenEnabled) {
+    addText("浏览器不支持全屏", state.duck.x, state.duck.z, "#b33327");
+    return;
+  }
+  try {
+    if (isFullscreen()) {
+      await document.exitFullscreen();
+    } else {
+      await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+    }
+  } catch {
+    addText("请再点一次全屏按钮", state.duck.x, state.duck.z, "#b33327");
+  }
+  updateFullscreenButton();
 }
 
 function regionName(item) {
@@ -3954,6 +4245,7 @@ window.addEventListener("keydown", (event) => {
   }
   if (state?.paused) return;
   if (state?.stageIntro || state?.bossIntro) return;
+  if (state?.result !== "playing") return;
   if (["w", "a", "s", "d", "q", "e", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Shift"].includes(key)) resumeAudio();
   if (key === " " || key === "Spacebar") performAction();
   else if (["1", "2", "3"].includes(key)) usePowerupSlot(Number.parseInt(key, 10) - 1);
@@ -3968,6 +4260,7 @@ window.addEventListener("keyup", (event) => {
 canvas.addEventListener("click", (event) => {
   resumeAudio();
   if (state?.paused || state?.stageIntro || state?.bossIntro) return;
+  if (state?.result !== "playing") return;
   if (performThrowAction(event)) return;
   requestPointerLockSafely();
 });
@@ -3981,6 +4274,7 @@ window.addEventListener("mousemove", (event) => {
 canvas.addEventListener("pointerdown", (event) => {
   resumeAudio();
   if (state?.paused || state?.stageIntro || state?.bossIntro) return;
+  if (state?.result !== "playing") return;
   if (performThrowAction(event)) return;
   pointer.dragging = true;
   pointer.x = event.clientX;
@@ -4003,6 +4297,8 @@ ui.actionButton.addEventListener("click", performAction);
 ui.restartButton.addEventListener("click", reset);
 ui.resumeButton.addEventListener("click", () => hidePauseMenu(false));
 ui.stageIntroButton.addEventListener("click", startStageAfterIntro);
+ui.fullscreenButton?.addEventListener("click", toggleFullscreen);
+document.addEventListener("fullscreenchange", updateFullscreenButton);
 document.addEventListener("pointerlockchange", () => {
   if (document.pointerLockElement !== canvas && state?.result === "playing" && !state.paused && !state.stageIntro && !state.bossIntro) showPauseMenu();
 });
