@@ -18,7 +18,6 @@ const ui = {
   actionText: document.querySelector("#actionText"),
   nearestText: document.querySelector("#nearestText"),
   missionText: document.querySelector("#missionText"),
-  actionButton: document.querySelector("#actionButton"),
   restartButton: document.querySelector("#restartButton"),
   upgradeModal: document.querySelector("#upgradeModal"),
   upgradeTitle: document.querySelector("#upgradeTitle"),
@@ -31,6 +30,7 @@ const ui = {
   radarMap: document.querySelector("#radarMap"),
   powerupSlots: document.querySelector("#powerupSlots"),
   powerupEffectText: document.querySelector("#powerupEffectText"),
+  effectCountdown: document.querySelector("#effectCountdown"),
   damageVignette: document.querySelector("#damageVignette"),
   bossPointer: document.querySelector("#bossPointer"),
   bossTitle: document.querySelector("#bossTitle"),
@@ -69,7 +69,7 @@ const powerupSpawnInterval = 30;
 const powerupSlotCount = 3;
 const bossName = "污染煽动者 王乱丢";
 const bossShortName = "王乱丢";
-const bossEscapeDuration = 7.2;
+const bossEscapeDuration = 9.2;
 const debugStage = getDebugStage();
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
@@ -1706,6 +1706,7 @@ function addShoreLandmarks() {
   const tower = new THREE.Group();
   tower.position.set(lake.rx * 0.96, terrainHeightAt(lake.rx * 0.96, lake.rz * 0.7), lake.rz * 0.7);
   tower.rotation.y = -0.18;
+  tower.scale.set(1.32, 1.48, 1.32);
   const brick = new THREE.MeshStandardMaterial({ color: 0xb36a4c, roughness: 0.78 });
   const darkBrick = new THREE.MeshStandardMaterial({ color: 0x8f4f3f, roughness: 0.82 });
   const eaveMaterial = new THREE.MeshStandardMaterial({ color: 0x5d6661, roughness: 0.84 });
@@ -2903,16 +2904,51 @@ function openChannelAndWin() {
   playSuccess();
 }
 
+function escapeRouteForVisitor(start, index, total) {
+  const offset = (index - (total - 1) / 2) * 0.95;
+  return [
+    { x: start.x, z: start.z },
+    { x: lake.rx * 1.16 + offset, z: lake.rz * 0.18 + offset * 0.08 },
+    { x: lake.rx * 1.14 + offset, z: lake.rz * 0.66 + offset * 0.1 },
+    { x: lake.rx * 1.34 + offset, z: lake.rz * 1.02 + offset * 0.12 },
+    { x: lake.rx * 1.72 + offset, z: lake.rz * 1.34 + offset * 0.14 }
+  ];
+}
+
+function pointOnRoute(route, progress) {
+  if (route.length <= 1) return { point: route[0], tangent: { x: 1, z: 0 } };
+  const lengths = [];
+  let total = 0;
+  for (let i = 0; i < route.length - 1; i += 1) {
+    const length = Math.max(0.001, Math.hypot(route[i + 1].x - route[i].x, route[i + 1].z - route[i].z));
+    lengths.push(length);
+    total += length;
+  }
+  let target = clamp(progress, 0, 1) * total;
+  for (let i = 0; i < lengths.length; i += 1) {
+    const length = lengths[i];
+    if (target <= length || i === lengths.length - 1) {
+      const a = route[i];
+      const b = route[i + 1];
+      const local = clamp(target / length, 0, 1);
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.max(0.001, Math.hypot(dx, dz));
+      return {
+        point: { x: a.x + dx * local, z: a.z + dz * local },
+        tangent: { x: dx / len, z: dz / len }
+      };
+    }
+    target -= length;
+  }
+  return { point: route[route.length - 1], tangent: { x: 1, z: 0 } };
+}
+
 function startEndingCutscene() {
   const visitors = state.visitors.length ? state.visitors : [state.boss].filter(Boolean);
   const escapees = visitors.map((visitor, index) => {
     const start = { x: visitor.x, z: visitor.z };
-    const baseAngle = -0.1 + (index - (visitors.length - 1) / 2) * 0.16;
-    const endRadius = playableLakeMargin + 0.72 + index * 0.04;
-    const end = {
-      x: Math.cos(baseAngle) * lake.rx * endRadius,
-      z: Math.sin(baseAngle) * lake.rz * endRadius
-    };
+    const route = escapeRouteForVisitor(start, index, visitors.length);
     visitor.cooldown = bossEscapeDuration + 2;
     visitor.throwWindup = 0;
     visitor.nextTarget = null;
@@ -2920,7 +2956,7 @@ function startEndingCutscene() {
     return {
       visitor,
       start,
-      end,
+      route,
       delay: visitor.isBoss ? 0 : 0.34 + index * 0.16,
       wobble: Math.random() * Math.PI * 2
     };
@@ -2930,8 +2966,8 @@ function startEndingCutscene() {
     duration: bossEscapeDuration,
     escapees,
     cameraFrom: { x: state.duck.x - 2.4, y: state.duck.eyeY + 1.15, z: state.duck.z + 4.8 },
-    cameraTo: { x: lake.rx * 0.5, y: 7.1, z: -lake.rz * 0.74 },
-    lookAt: { x: lake.rx * 1.2, y: 1.2, z: -lake.rz * 0.12 }
+    cameraTo: { x: lake.rx * 0.9, y: 7.4, z: lake.rz * 0.84 },
+    lookAt: { x: lake.rx * 1.16, y: 1.5, z: lake.rz * 0.72 }
   };
   keys.clear();
   state.duck.vx = 0;
@@ -2949,11 +2985,9 @@ function updateEndingCutscene(dt) {
     const local = clamp((cutscene.t - escapee.delay) / Math.max(0.1, cutscene.duration - escapee.delay - 0.7), 0, 1);
     const t = easeInOutCubic(local);
     const sideStep = Math.sin(local * Math.PI * 5 + escapee.wobble) * (1 - local) * 0.34;
-    const dx = escapee.end.x - escapee.start.x;
-    const dz = escapee.end.z - escapee.start.z;
-    const len = Math.max(0.001, Math.hypot(dx, dz));
-    escapee.visitor.x = escapee.start.x + dx * t - dz / len * sideStep;
-    escapee.visitor.z = escapee.start.z + dz * t + dx / len * sideStep;
+    const routed = pointOnRoute(escapee.route, t);
+    escapee.visitor.x = routed.point.x - routed.tangent.z * sideStep;
+    escapee.visitor.z = routed.point.z + routed.tangent.x * sideStep;
     escapee.visitor.baseX = escapee.visitor.x;
     escapee.visitor.baseZ = escapee.visitor.z;
     escapee.visitor.drift += dt * 8;
@@ -3625,6 +3659,23 @@ function formatEffectTime(seconds) {
 function updatePowerupUi(inBossStage) {
   if (!ui.powerupSlots || !ui.powerupEffectText) return;
   ui.powerupSlots.closest(".powerup-panel").hidden = !inBossStage;
+  if (ui.effectCountdown) {
+    const active = inBossStage
+      ? powerupTypes
+        .filter((type) => hasActiveEffect(type.id))
+        .map((type) => ({
+          type,
+          remaining: activeEffectRemaining(type.id),
+          progress: clamp(activeEffectRemaining(type.id) / type.duration * 100, 0, 100)
+        }))
+      : [];
+    ui.effectCountdown.hidden = active.length === 0;
+    ui.effectCountdown.innerHTML = active.map(({ type, remaining, progress }) => `
+      <span style="--effect-color:#${type.color.toString(16).padStart(6, "0")};--effect-progress:${progress}%">
+        <b>${type.short}</b><strong>${type.name}</strong><em>${formatEffectTime(remaining)}</em><i></i>
+      </span>
+    `).join("");
+  }
   if (!inBossStage) return;
   ui.powerupSlots.innerHTML = "";
   state.powerupSlots.forEach((slot, index) => {
@@ -3704,28 +3755,24 @@ function updateUi() {
     ui.actionText.textContent = `${bossShortName}正在逃走`;
     ui.missionText.textContent = "看清污染者离开未名湖";
     ui.nearestText.textContent = "游客正在撤离岸边";
-    ui.actionButton.textContent = "观看动画";
     return;
   }
   if (state.result === "won") {
     ui.actionText.textContent = "胜利";
     ui.missionText.textContent = "进入第二阶段（尚未完成）";
     ui.nearestText.textContent = "重点游客已离开";
-    ui.actionButton.textContent = "再玩一次";
     return;
   }
   if (state.result === "lost") {
     ui.actionText.textContent = "水质过低";
     ui.missionText.textContent = "需要更快清理";
     ui.nearestText.textContent = "污染扩散";
-    ui.actionButton.textContent = "重新开始";
     return;
   }
   if (state.result === "upgrade") {
     ui.actionText.textContent = "选择升级";
     ui.missionText.textContent = `${stage.name}完成`;
     ui.nearestText.textContent = `即将进入第 ${state.pendingRound} 阶段`;
-    ui.actionButton.textContent = "等待选择";
     return;
   }
 
@@ -3746,7 +3793,6 @@ function updateUi() {
     : `拾取${nearTrash.item.urgent ? "污染热点" : nearTrash.item.type.name}`;
   else if (nearVisitor && nearVisitor.d < (nearVisitor.visitor?.isBoss ? 4.8 : (duck.sign ? 2.45 : 1.8))) action = nearVisitor.visitor?.isBoss ? "鸣叫打断重点游客" : (duck.sign ? "举牌提醒游客" : "鸣叫（游客看不懂）");
   ui.actionText.textContent = action;
-  ui.actionButton.textContent = inBossStage && carryingCount() > 0 && nearBin.d >= 3.0 && !hasActiveEffect("cleaner") ? "鸣叫" : (action === "巡湖中" ? "鸣叫" : "行动");
 
   if (nearPowerup) {
     ui.nearestText.textContent = `岛上道具 ${nearPowerup.item.type.name}: ${nearPowerup.item.type.text}`;
@@ -4293,7 +4339,6 @@ window.addEventListener("pointerup", () => {
   pointer.dragging = false;
 });
 
-ui.actionButton.addEventListener("click", performAction);
 ui.restartButton.addEventListener("click", reset);
 ui.resumeButton.addEventListener("click", () => hidePauseMenu(false));
 ui.stageIntroButton.addEventListener("click", startStageAfterIntro);
