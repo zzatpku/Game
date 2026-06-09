@@ -30,7 +30,14 @@ const ui = {
   pausePressureText: document.querySelector("#pausePressureText"),
   radarMap: document.querySelector("#radarMap"),
   powerupSlots: document.querySelector("#powerupSlots"),
-  powerupEffectText: document.querySelector("#powerupEffectText")
+  powerupEffectText: document.querySelector("#powerupEffectText"),
+  damageVignette: document.querySelector("#damageVignette"),
+  bossPointer: document.querySelector("#bossPointer"),
+  bossTitle: document.querySelector("#bossTitle"),
+  stageIntroModal: document.querySelector("#stageIntroModal"),
+  stageIntroTitle: document.querySelector("#stageIntroTitle"),
+  stageIntroBody: document.querySelector("#stageIntroBody"),
+  stageIntroButton: document.querySelector("#stageIntroButton")
 };
 
 const oldLake = { cx: 642, cy: 375, rx: 495, ry: 255 };
@@ -59,6 +66,8 @@ const bossTrashDamage = 15;
 const pollutedDuckDamagePerSecond = 2;
 const powerupSpawnInterval = 30;
 const powerupSlotCount = 3;
+const bossName = "污染煽动者 王乱丢";
+const bossShortName = "王乱丢";
 const debugStage = getDebugStage();
 const islandCenter = { x: lake.rx * 0.08, z: -lake.rz * 0.07 };
 const stoneBoatCenter = { x: islandCenter.x + 9.2, z: islandCenter.z + 0.15 };
@@ -107,6 +116,39 @@ const powerupTypes = [
   { id: "freeze", name: "定身石", short: "停", duration: 10, color: 0x315f96, text: "10s 定住 Boss" },
   { id: "stamina", name: "莲子糖", short: "体", duration: 30, color: 0xd24d3f, text: "30s 无限体力" }
 ];
+
+const stageBriefings = {
+  1: {
+    title: "第一阶段: 清理未名湖",
+    intro: "目标是清理 5 件漂浮垃圾，先熟悉巡湖和回收路线。",
+    rules: [
+      "WASD 移动，左/右方向键或拖动画面转视角。",
+      "Space 靠近垃圾时叼起，靠近岸边绿色回收点时投放。",
+      "Shift 冲刺会消耗体力；空嘴按 Space 鸣叫，提醒附近游客。",
+      "清澈度归零会失败。"
+    ]
+  },
+  2: {
+    title: "第二阶段: 游客压力加大",
+    intro: "目标是累计清理 15 件垃圾，游客投掷会更频繁。",
+    rules: [
+      "继续用 Space 捡垃圾和投放到回收点。",
+      "红色污染热点会让湖水下降更快，优先清理。",
+      "连续快速回收会获得连击回复清澈度。",
+      "Esc 暂停，Shift 冲刺，鸣叫或告示牌可以延缓游客乱丢。"
+    ]
+  },
+  3: {
+    title: "第三阶段: Boss 战",
+    intro: `${bossName}出现。用湖里的垃圾当弹药，约 40 次命中可以赶走 Boss。`,
+    rules: [
+      "Space 捡垃圾；左键投掷已携带垃圾攻击 Boss；落空的垃圾会回到湖里。",
+      "Boss 每 30 秒周期召来 1 名弱跟随游客；清澈度到 0% 后鸭子每秒掉 2 血。",
+      `湖心岛每 30 秒刷新 1 个道具: ${powerupTypes.map((type) => `${type.name}=${type.text}`).join("；")}。`,
+      "鸭子最多存 3 个道具，按 1/2/3 使用；屏幕红色越明显表示鸭子血量越危险。"
+    ]
+  }
+};
 
 let state;
 let audio;
@@ -211,6 +253,8 @@ function reset() {
     roundTarget: stages[0].trashTarget,
     result: "playing",
     paused: false,
+    stageIntro: false,
+    bossIntro: null,
     pendingRound: null,
     upgrade: null,
     upgradeLevels: {
@@ -277,8 +321,11 @@ function reset() {
   yaw = yawTo(firstTarget);
   ui.upgradeModal.hidden = true;
   ui.pauseMenu.hidden = true;
+  ui.stageIntroModal.hidden = true;
+  ui.bossTitle.hidden = true;
   syncScene(true);
   updateUi();
+  showStageIntro(currentStage());
 }
 
 function makeTrash(x, y, typeIndex, urgent = false) {
@@ -2007,7 +2054,9 @@ function createVisitorMesh(visitor) {
       new THREE.MeshBasicMaterial({ color: 0xd24d3f, transparent: true, opacity: 0.95, depthWrite: false })
     );
     healthFill.position.set(0, 1.72, 0.04);
-    group.add(badge, healthBack, healthFill);
+    const nameTag = createSignSprite(`Boss ${bossShortName}`, "#7d2532", 1.18, 0.32);
+    nameTag.position.set(0, 2.02, 0);
+    group.add(badge, healthBack, healthFill, nameTag);
   }
   group.userData = { shirt, arms: [armL, armR], healthFill };
   dynamic.add(group);
@@ -2302,10 +2351,79 @@ function enterStage(stageId, options = {}) {
   state.roundTarget = stage.trashTarget;
   state.pendingRound = null;
   state.result = "playing";
+  state.stageIntro = false;
+  state.bossIntro = null;
   state.duck.carrying = [];
   for (const visitor of state.visitors) visitor.timer = Math.min(visitor.timer, visitorThrowDelay() * 0.62);
   if (stage.mode === "boss") setupBossStage();
   if (!options.silent) addText(`${stage.name}开始`, state.duck.x, state.duck.z, stage.mode === "boss" ? "#b33327" : "#2d8064");
+  showStageIntro(stage);
+}
+
+function stageBriefingHtml(stage) {
+  const briefing = stageBriefings[stage.id];
+  if (!briefing) return "";
+  return `
+    <p><strong>${briefing.intro}</strong></p>
+    <ul>${briefing.rules.map((rule) => `<li>${rule}</li>`).join("")}</ul>
+  `;
+}
+
+function showStageIntro(stage) {
+  if (!ui.stageIntroModal) return;
+  const briefing = stageBriefings[stage.id];
+  if (!briefing) return;
+  state.stageIntro = true;
+  state.bossIntro = null;
+  state.duck.vx = 0;
+  state.duck.vz = 0;
+  keys.clear();
+  ui.stageIntroTitle.textContent = briefing.title;
+  ui.stageIntroBody.innerHTML = stageBriefingHtml(stage);
+  ui.stageIntroButton.textContent = stage.mode === "boss" ? "查看 Boss" : "开始";
+  ui.stageIntroModal.hidden = false;
+  document.exitPointerLock?.();
+}
+
+function startStageAfterIntro() {
+  if (!state?.stageIntro) return;
+  resumeAudio();
+  state.stageIntro = false;
+  ui.stageIntroModal.hidden = true;
+  if (currentStage().mode === "boss") startBossIntro();
+}
+
+function startBossIntro() {
+  if (!state.boss) return;
+  keys.clear();
+  state.duck.vx = 0;
+  state.duck.vz = 0;
+  const intro = {
+    t: 0,
+    duration: 5.2,
+    from: { x: state.boss.x + 12, y: 5.4, z: state.boss.z + 8 },
+    to: { x: state.duck.x - 4, y: 2.6, z: state.duck.z + 8 }
+  };
+  intro.timeoutId = window.setTimeout(() => finishBossIntro(intro), intro.duration * 1000 + 120);
+  state.bossIntro = intro;
+  ui.bossTitle.hidden = false;
+  playVisitorWindup();
+}
+
+function finishBossIntro(intro = state.bossIntro) {
+  if (!intro || state.bossIntro !== intro) return;
+  if (intro.timeoutId) window.clearTimeout(intro.timeoutId);
+  state.bossIntro = null;
+  ui.bossTitle.hidden = true;
+  if (refs.duckView) refs.duckView.visible = true;
+  yaw = yawTo(state.boss || state.duck);
+  pitch = -0.12;
+}
+
+function updateBossIntro(dt) {
+  if (!state.bossIntro) return;
+  state.bossIntro.t += dt;
+  if (state.bossIntro.t >= state.bossIntro.duration) finishBossIntro(state.bossIntro);
 }
 
 function setupBossStage() {
@@ -2456,7 +2574,7 @@ function updatePollutionHealthDamage(dt) {
 
 function performAction() {
   resumeAudio();
-  if (state.paused) return;
+  if (state.paused || state.stageIntro || state.bossIntro) return;
   if (state.result !== "playing") {
     if (state.result !== "upgrade") reset();
     return;
@@ -2568,7 +2686,7 @@ function performAction() {
 
 function performThrowAction(event) {
   if (event && event.button !== 0) return false;
-  if (!state || state.paused || state.result !== "playing") return false;
+  if (!state || state.paused || state.stageIntro || state.bossIntro || state.result !== "playing") return false;
   if (currentStage().mode !== "boss" || carryingCount() === 0) return false;
   if (state.time - state.lastThrowInputAt < 0.16) {
     event?.preventDefault?.();
@@ -2586,6 +2704,15 @@ function performThrowAction(event) {
 }
 
 function update(dt) {
+  if (state.stageIntro || state.bossIntro) {
+    state.time += dt;
+    updateBossIntro(dt);
+    updateParticles(dt);
+    syncScene();
+    updateCamera(dt);
+    updateUi();
+    return;
+  }
   if (state.paused) {
     syncScene();
     updateCamera(dt);
@@ -3158,12 +3285,34 @@ function removeTrashMesh(item) {
   refs.trash.delete(item.id);
 }
 
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2;
+}
+
+function updateBossIntroCamera() {
+  const intro = state.bossIntro;
+  const boss = state.boss;
+  if (!intro || !boss) return false;
+  const raw = clamp(intro.t / intro.duration, 0, 1);
+  const t = easeInOutCubic(raw);
+  const orbit = Math.sin(t * Math.PI) * 2.2;
+  const x = intro.from.x + (intro.to.x - intro.from.x) * t + Math.sin(t * Math.PI * 1.2) * orbit;
+  const y = intro.from.y + (intro.to.y - intro.from.y) * t;
+  const z = intro.from.z + (intro.to.z - intro.from.z) * t + Math.cos(t * Math.PI) * orbit;
+  camera.position.set(x, y, z);
+  camera.lookAt(boss.x, terrainHeightAt(boss.x, boss.z) + 1.8, boss.z);
+  if (refs.duckView) refs.duckView.visible = false;
+  return true;
+}
+
 function updateCamera(dt) {
+  if (updateBossIntroCamera()) return;
   const duck = state.duck;
   const shake = state.cameraShake > 0 ? (Math.random() - 0.5) * state.cameraShake * 0.16 : 0;
   const eyeY = duck.eyeY ?? duckEyeTargetY(duck.x, duck.z, duck.surface);
   camera.position.set(duck.x + shake, eyeY + Math.sin(duck.bob) * 0.025, duck.z + shake);
   camera.rotation.set(pitch, yaw, 0);
+  if (refs.duckView) refs.duckView.visible = true;
   refs.duckView.position.y = -0.78 + Math.sin(duck.bob) * 0.01;
   const wingSwing = Math.sin(duck.bob * 0.86) * (duck.sprinting ? 0.18 : 0.08);
   if (refs.duckViewParts.wing) refs.duckViewParts.wing.rotation.z = -0.08 + wingSwing;
@@ -3199,15 +3348,16 @@ function updateMinimap() {
   refs.minimap = [];
 
   if (!ui.radarMap) return;
-  const makeDot = (x, z, className) => {
+  const makeDot = (x, z, className, options = {}) => {
     const dot = document.createElement("i");
     dot.className = `radar-dot ${className}`;
     dot.style.left = `${50 + x / (lake.rx * playableLakeMargin) * 44}%`;
     dot.style.top = `${50 + z / (lake.rz * playableLakeMargin) * 40}%`;
+    if (options.heading !== undefined) dot.style.setProperty("--duck-heading", `${options.heading}rad`);
     ui.radarMap.append(dot);
     refs.minimap.push(dot);
   };
-  makeDot(state.duck.x, state.duck.z, "duck");
+  makeDot(state.duck.x, state.duck.z, "duck", { heading: yaw });
   for (const item of state.trash) makeDot(item.x, item.z, item.urgent ? "urgent" : "trash");
   if (state.powerup) makeDot(state.powerup.x, state.powerup.z, "powerup");
   if (currentStage().mode === "boss") {
@@ -3237,6 +3387,31 @@ function updatePowerupUi(inBossStage) {
   ui.powerupEffectText.textContent = effects.length ? effects.join(" / ") : "无进行中效果";
 }
 
+function updateBossPointer(inBossStage) {
+  if (!ui.bossPointer) return;
+  const shouldShow = inBossStage && state.boss && state.boss.health > 0 && !state.stageIntro;
+  ui.bossPointer.hidden = !shouldShow;
+  if (!shouldShow) return;
+  const targetYaw = yawTo(state.boss);
+  const relative = wrapAngle(targetYaw - yaw);
+  const left = 50 - Math.sin(relative) * 42;
+  const top = 50 - Math.cos(relative) * 36;
+  ui.bossPointer.style.left = `${clamp(left, 8, 92)}%`;
+  ui.bossPointer.style.top = `${clamp(top, 10, 88)}%`;
+  ui.bossPointer.querySelector("i").style.transform = `rotate(${relative}rad)`;
+}
+
+function updateDamageVignette(inBossStage) {
+  if (!ui.damageVignette) return;
+  if (!inBossStage || !state.duck?.maxHealth) {
+    ui.damageVignette.style.opacity = "0";
+    return;
+  }
+  const pct = clamp(state.duck.health / state.duck.maxHealth, 0, 1);
+  const danger = clamp((0.72 - pct) / 0.72, 0, 1);
+  ui.damageVignette.style.opacity = String(danger * 0.78);
+}
+
 function updateUi() {
   const clarity = Math.round(state.clarity);
   const awareness = Math.round(state.awareness);
@@ -3251,6 +3426,8 @@ function updateUi() {
   ui.awarenessBar.style.width = `${awareness}%`;
   ui.staminaBar.style.width = `${staminaPct}%`;
   const inBossStage = stage.mode === "boss";
+  updateBossPointer(inBossStage);
+  updateDamageVignette(inBossStage);
   ui.duckHealthMeter.hidden = !inBossStage;
   ui.bossHealthMeter.hidden = !inBossStage;
   if (inBossStage) {
@@ -3354,7 +3531,7 @@ function updatePauseMenu() {
 }
 
 function showPauseMenu() {
-  if (!state || state.result !== "playing") return;
+  if (!state || state.result !== "playing" || state.stageIntro || state.bossIntro) return;
   state.paused = true;
   keys.clear();
   state.duck.vx = 0;
@@ -3763,8 +3940,12 @@ function loop() {
 
 window.addEventListener("keydown", (event) => {
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Spacebar", "Shift", "Escape", "w", "a", "s", "d", "q", "e", "1", "2", "3"].includes(key)) {
+  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Spacebar", "Shift", "Escape", "Enter", "w", "a", "s", "d", "q", "e", "1", "2", "3"].includes(key)) {
     event.preventDefault();
+  }
+  if (state?.stageIntro && key === "Enter") {
+    startStageAfterIntro();
+    return;
   }
   if (key === "Escape") {
     showPauseMenu();
@@ -3772,6 +3953,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (state?.paused) return;
+  if (state?.stageIntro || state?.bossIntro) return;
   if (["w", "a", "s", "d", "q", "e", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Shift"].includes(key)) resumeAudio();
   if (key === " " || key === "Spacebar") performAction();
   else if (["1", "2", "3"].includes(key)) usePowerupSlot(Number.parseInt(key, 10) - 1);
@@ -3785,20 +3967,20 @@ window.addEventListener("keyup", (event) => {
 
 canvas.addEventListener("click", (event) => {
   resumeAudio();
-  if (state?.paused) return;
+  if (state?.paused || state?.stageIntro || state?.bossIntro) return;
   if (performThrowAction(event)) return;
   requestPointerLockSafely();
 });
 
 window.addEventListener("mousemove", (event) => {
-  if (state?.paused || document.pointerLockElement !== canvas) return;
+  if (state?.paused || state?.stageIntro || state?.bossIntro || document.pointerLockElement !== canvas) return;
   yaw = wrapAngle(yaw - event.movementX * 0.002);
   pitch = clamp(pitch - event.movementY * 0.002, -0.55, 0.35);
 });
 
 canvas.addEventListener("pointerdown", (event) => {
   resumeAudio();
-  if (state?.paused) return;
+  if (state?.paused || state?.stageIntro || state?.bossIntro) return;
   if (performThrowAction(event)) return;
   pointer.dragging = true;
   pointer.x = event.clientX;
@@ -3806,7 +3988,7 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
-  if (state?.paused || !pointer.dragging || document.pointerLockElement === canvas) return;
+  if (state?.paused || state?.stageIntro || state?.bossIntro || !pointer.dragging || document.pointerLockElement === canvas) return;
   yaw = wrapAngle(yaw - (event.clientX - pointer.x) * 0.006);
   pitch = clamp(pitch - (event.clientY - pointer.y) * 0.006, -0.55, 0.35);
   pointer.x = event.clientX;
@@ -3820,8 +4002,9 @@ window.addEventListener("pointerup", () => {
 ui.actionButton.addEventListener("click", performAction);
 ui.restartButton.addEventListener("click", reset);
 ui.resumeButton.addEventListener("click", () => hidePauseMenu(false));
+ui.stageIntroButton.addEventListener("click", startStageAfterIntro);
 document.addEventListener("pointerlockchange", () => {
-  if (document.pointerLockElement !== canvas && state?.result === "playing" && !state.paused) showPauseMenu();
+  if (document.pointerLockElement !== canvas && state?.result === "playing" && !state.paused && !state.stageIntro && !state.bossIntro) showPauseMenu();
 });
 ui.upgradeModal.addEventListener("click", (event) => {
   const button = event.target.closest("[data-upgrade]");

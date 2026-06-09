@@ -28,7 +28,16 @@
           <canvas id="game" width="1280" height="720"></canvas>
           <div class="screen-fx" aria-hidden="true">
             <i class="water-glow"></i>
+            <i class="damage-vignette" id="damageVignette"></i>
             <i class="reticle"></i>
+          </div>
+          <div class="boss-pointer" id="bossPointer" hidden>
+            <i></i>
+            <span>Boss</span>
+          </div>
+          <div class="boss-title" id="bossTitle" hidden>
+            <p>Boss 出现</p>
+            <strong>污染煽动者 王乱丢</strong>
           </div>
           <div class="radar" aria-label="position radar">
             <span>位置雷达</span>
@@ -121,6 +130,15 @@
       </section>
     </main>
 
+    <section class="stage-modal" id="stageIntroModal" aria-label="stage briefing" hidden>
+      <div class="stage-box">
+        <p class="eyebrow">Stage briefing</p>
+        <h2 id="stageIntroTitle">阶段说明</h2>
+        <div class="stage-copy" id="stageIntroBody"></div>
+        <button id="stageIntroButton" type="button">开始</button>
+      </div>
+    </section>
+
     <section class="upgrade-modal" id="upgradeModal" aria-label="upgrade choice" hidden>
       <div class="upgrade-box">
         <p class="eyebrow">Upgrade unlocked</p>
@@ -142,6 +160,6 @@
       </div>
     </section>
 
-    <script type="module" src="game.js?v=24"></script>
+    <script type="module" src="game.js?v=25"></script>
   </body>
 </html>
