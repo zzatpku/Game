@@ -3357,7 +3357,7 @@ function updateMinimap() {
     ui.radarMap.append(dot);
     refs.minimap.push(dot);
   };
-  makeDot(state.duck.x, state.duck.z, "duck", { heading: yaw });
+  makeDot(state.duck.x, state.duck.z, "duck", { heading: -yaw });
   for (const item of state.trash) makeDot(item.x, item.z, item.urgent ? "urgent" : "trash");
   if (state.powerup) makeDot(state.powerup.x, state.powerup.z, "powerup");
   if (currentStage().mode === "boss") {
