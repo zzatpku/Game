@@ -1706,7 +1706,7 @@ function addShoreLandmarks() {
   const tower = new THREE.Group();
   tower.position.set(lake.rx * 0.96, terrainHeightAt(lake.rx * 0.96, lake.rz * 0.7), lake.rz * 0.7);
   tower.rotation.y = -0.18;
-  tower.scale.set(1.32, 1.48, 1.32);
+  tower.scale.set(1.62, 2.35, 1.62);
   const brick = new THREE.MeshStandardMaterial({ color: 0xb36a4c, roughness: 0.78 });
   const darkBrick = new THREE.MeshStandardMaterial({ color: 0x8f4f3f, roughness: 0.82 });
   const eaveMaterial = new THREE.MeshStandardMaterial({ color: 0x5d6661, roughness: 0.84 });
