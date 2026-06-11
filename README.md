@@ -7,9 +7,9 @@
 
 ## 游戏画面
 
-<video src="assets/拿技能+使用技能.mp4" controls playsinline width="960"></video>
+[![第三阶段道具演示](assets/powerup-demo-preview.gif)](assets/拿技能+使用技能.mp4)
 
-如果当前页面没有直接显示视频，可以打开 [`assets/拿技能+使用技能.mp4`](assets/拿技能+使用技能.mp4) 查看带声音的演示片段。
+上方动图展示第三阶段拿技能和使用技能的画面。点击动图或打开 [`assets/拿技能+使用技能.mp4`](assets/拿技能+使用技能.mp4) 可以查看带声音的原视频。
 
 ## 运行
 
