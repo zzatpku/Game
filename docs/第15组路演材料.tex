@@ -1,0 +1,401 @@
+\documentclass[UTF8,a4paper,12pt]{ctexart}
+
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{longtable}
+
+\geometry{left=2.4cm,right=2.4cm,top=2.5cm,bottom=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue,
+  citecolor=black
+}
+
+\setlist[itemize]{leftmargin=2em,itemsep=0.25em,topsep=0.35em}
+\setlist[enumerate]{leftmargin=2em,itemsep=0.25em,topsep=0.35em}
+\titleformat{\section}{\Large\bfseries}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.8em}{}
+
+\pagestyle{fancy}
+\setlength{\headheight}{15pt}
+\fancyhf{}
+\lhead{未名湖守护鸭}
+\rhead{游戏设计文档}
+\cfoot{\thepage}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\title{\heiti 未名湖守护鸭\\游戏设计文档}
+\author{团队成员：张章、邢楚嫣、贾阜松}
+\date{2026年6月}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{center}
+\begin{tabularx}{0.92\textwidth}{>{\bfseries}p{3.2cm}Y}
+\toprule
+作品名称 & 未名湖守护鸭 \\
+游戏类型 & 第一人称动物冒险 / 校园生态保护 / 开放世界原型 \\
+当前版本 & 可运行网页 Demo：未名湖三阶段原型 \\
+完整愿景 & 未名湖到朗润湖的多动物生态冒险与科研解谜游戏 \\
+目标平台 & Web 浏览器；后续可扩展为桌面端版本 \\
+试玩方式 & 已部署到 GitHub Pages，可通过 \url{https://zzatpku.github.io/Game/} 从头试玩，也可通过 \url{https://zzatpku.github.io/Game/?debugStage=3} 直接进入 Boss 关。 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\vspace{1em}
+
+\noindent\textbf{一句话介绍：}
+玩家扮演一只生活在未名湖的鸭子，从清理游客垃圾开始守护湖泊，逐步打开通往朗润湖的水道，并在完整版本中与多种校园动物协作，理解并帮助北大的生态科研。
+
+\newpage
+\tableofcontents
+\newpage
+
+\section{项目概述}
+
+\subsection{设计目标}
+
+《未名湖守护鸭》是一款以北京大学校园生态空间为母题的动物冒险游戏。作品希望把``未名湖、博雅塔、湖心岛、朗润湖、校园科研''等北大元素转化为可操作、可探索、可推进的游戏内容，而不只是作为静态背景。玩家从一只鸭子的低视角进入校园，在清理垃圾、提醒游客、打开水道、进入更大生态区的过程中，体验从``本能保护家园''到``理解生态科研''的叙事转变。
+
+当前 Demo 聚焦完整游戏的第一阶段：未名湖守护。它已经实现可玩的核心循环，用于现场路演展示。完整版本则将以当前 Demo 的胜利结果``湖底水道打开''作为第二阶段入口，扩展到朗润湖、多动物切换、水下探索和生态机关解谜。
+
+\subsection{目标玩家}
+
+\begin{itemize}
+  \item 对北大校园空间、未名湖与博雅塔等校园意象有认同感的学生与校友。
+  \item 喜欢轻量探索、动物视角、环保主题和解谜冒险的玩家。
+\end{itemize}
+
+\subsection{核心体验关键词}
+
+\begin{itemize}
+  \item \textbf{低视角校园探索：}以鸭子的高度重新观察未名湖、湖心岛、桥、石舫和博雅塔。
+  \item \textbf{生态保护循环：}清理垃圾、阻止游客污染、保持湖水清澈。
+  \item \textbf{成长与压力：}前两阶段之间提供升级选择，第三阶段转入 Boss 战和道具管理。
+  \item \textbf{误解与理解：}完整版本中，动物从阻止人类科研行为转向协助科研。
+  \item \textbf{北大空间推进：}未名湖水道打开后进入朗润湖，校园空间成为关卡结构。
+\end{itemize}
+
+\section{北大母题转化}
+
+\subsection{校园空间不是背景，而是游戏结构}
+
+本作的核心地图从未名湖开始。当前 Demo 中，玩家不是在抽象湖面上捡垃圾，而是在一个以未名湖为参考的 3D 场景中行动：湖心岛、连接岸边和湖心岛的桥、石舫、环湖岸坡、回收点、游客、博雅塔等都作为玩家判断方位和规划路线的依据。
+
+完整版本将把北大校园空间进一步结构化：
+
+\begin{itemize}
+  \item \textbf{未名湖：}新手区和第一阶段核心循环，表现游客污染和鸭子的家园危机。
+  \item \textbf{湖底水道：}从第一阶段到第二阶段的关卡门，用``清理污染''触发空间解锁。
+  \item \textbf{朗润湖生态区：}开放生态空间，引入多动物切换、水下探索和科研任务。
+  \item \textbf{博雅塔与湖岸：}作为空间锚点，帮助玩家辨认方向，也承担校园文化识别功能。
+\end{itemize}
+
+\subsection{校园科研转化为叙事反转}
+
+完整设定中，动物最初看到人类捞鱼、放水下管、架围挡、夜间照明，会以为这是进一步破坏湖泊。随着任务推进，玩家逐步发现这些行为来自北大的学生和老师，是隔离病鱼、监测水质、保护水草和调查污染源的科研工作。游戏因此从单纯的``动物反抗人类''转向``动物与科研协作''。
+
+这一设计让北大母题不仅停留在建筑和地名层面，也进入学校的学术传统与生态研究想象之中。
+
+\section{游戏机制设计}
+
+\subsection{当前 Demo 的核心循环}
+
+当前版本实现的是未名湖守护部分的完整可玩闭环，但内部已经从单纯清理垃圾扩展为三个连续阶段：
+
+\begin{enumerate}
+  \item 岸边游客周期性向湖面投放垃圾，垃圾越多，湖水清澈度下降越快。
+  \item 玩家控制鸭子在湖面、岸边、桥和湖心岛之间移动，寻找最近垃圾或红色污染热点。
+  \item 靠近垃圾后按行动键叼起垃圾；靠近绿色回收点后再次行动，将垃圾投入垃圾桶。
+  \item 第一阶段以清理为主；第二阶段解锁北大学生制作的小告示牌，鸭子靠近游客后鸣叫并举牌提醒，使游客短时间停止乱丢。
+  \item 前两阶段结束后进入升级选择，玩家可以提升携带、体力或鸣叫能力。
+  \item 第三阶段出现污染煽动者``王乱丢''。鸭子需要把湖里的垃圾当作弹药投掷，击退 Boss 和跟随游客。
+  \item 湖心岛会刷新临时道具，玩家需要在补给、控场、爆发输出和躲避游客投掷之间切换节奏。
+  \item 击败王乱丢后，湖底被垃圾堵住的通往朗润湖的水道打开，当前 Demo 进入胜利结算。
+\end{enumerate}
+
+\subsection{三阶段规则}
+
+\begin{longtable}{p{2.6cm}p{3cm}p{8.2cm}}
+\toprule
+阶段 & 目标 & 机制重点 \\
+\midrule
+\endhead
+第一阶段 & 清理 5 件漂浮垃圾 & 玩家熟悉第一人称低视角移动、捡垃圾、回收点投放和清澈度压力。此时鸭子只能普通鸣叫，游客还不能理解其含义。 \\
+第二阶段 & 完成 15 点清理进度 & 游客投放频率加快；鸭子获得小告示牌，靠近游客后按 Space 可以举牌提醒。被提醒的游客 20 秒内停止乱丢，并奖励 2 点进度。 \\
+第三阶段 & 击败王乱丢 & 王乱丢拥有 600 点血量，鸭子拥有 100 点血量。玩家用垃圾作弹药，鼠标左键投掷；命中会降低 Boss 血量并回复清澈度，落空则垃圾重新掉回湖中。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{规则、目标与失败条件}
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{p{3cm}Y}
+\toprule
+项目 & 当前 Demo 规则 \\
+\midrule
+总目标 & 先完成两段清理与告示牌提醒，再在第三阶段击败王乱丢，打开通往朗润湖的湖底水道。 \\
+阶段目标 & 第一阶段清理 5 件垃圾；第二阶段完成 15 点进度；第三阶段把 Boss 血量降到 0。 \\
+压力来源 & 游客持续向湖中投放垃圾；第二阶段投放更快；第三阶段 Boss 和跟随游客会向湖面或鸭子投掷垃圾。 \\
+资源限制 & 鸭子初始一次只能携带 1 件垃圾，冲刺消耗体力；第三阶段还要管理血量、弹药和 3 个道具槽。 \\
+失败条件 & 前两阶段湖水清澈度降到 0\% 即失败；第三阶段清澈度降到 0\% 后鸭子每秒损失 2 点血，鸭子血量归零即失败。 \\
+胜利条件 & 击败王乱丢后触发撤离演出，湖底水道打开，显示通往朗润湖生态区的结算说明。 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{成长系统}
+
+当前 Demo 在第一、第二阶段之间提供升级选择，让玩家在游客压力提高和 Boss 战到来前形成成长反馈。
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{p{3cm}Y}
+\toprule
+升级项 & 作用 \\
+\midrule
+叼取强化 & 携带上限增加 1 件，减少往返回收点的次数。 \\
+耐力鸭 & 提高体力上限，并降低冲刺消耗。 \\
+响亮鸣叫 & 增强鸣叫范围，并通过更长的游客投放延迟降低污染压力。 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{第三阶段道具与战斗}
+
+第三阶段把``清理垃圾''转化为战斗资源。玩家仍然需要捡垃圾，但此时垃圾既可以回收，也可以作为攻击王乱丢的弹药。Boss 大部分时间在岸边停留 10 秒，再沿湖岸移动 20 秒；每个 30 秒周期只会在移动阶段召来 1 名跟随游客。跟随游客的投掷伤害和频率接近第一阶段普通游客，主要用于制造压力，而不是取代 Boss。
+
+\begin{longtable}{p{2.6cm}p{3cm}p{8.2cm}}
+\toprule
+道具 & 持续时间 & 效果 \\
+\midrule
+\endhead
+净水叶 & 30 秒 & 立刻净化已叼垃圾，持续期间靠近垃圾会直接净化并回复清澈度，但不能把垃圾当子弹投掷。 \\
+扩容带 & 30 秒 & 临时让弹带容量增加 3，适合连续投掷输出。 \\
+定身石 & 10 秒 & 定住 Boss，打断其行动和投掷，给玩家创造输出或补给窗口。 \\
+莲子糖 & 30 秒 & 体力不消耗，可以持续冲刺、绕岛补给或躲避投掷。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{操作方式}
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{p{3cm}Y}
+\toprule
+操作 & 功能 \\
+\midrule
+W / S & 前进 / 后退。 \\
+A / D & 左右移动，采用常见第一人称游戏控制方式。 \\
+Q / E & 横向移动，便于绕开游客投掷和贴近回收点。 \\
+鼠标 & 控制视角方向；点击画面可进入第一人称鼠标锁定。 \\
+Shift & 冲刺，消耗体力。 \\
+Space & 行动：拾取、回收或鸣叫提醒。 \\
+鼠标左键 & 第三阶段投掷已叼起的垃圾攻击 Boss。 \\
+1 / 2 / 3 & 第三阶段使用对应道具槽。 \\
+Esc & 退出鼠标锁定并打开暂停菜单，显示当前阶段、进度和游客压力。 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{完整游戏构想}
+
+\subsection{整体流程}
+
+完整版本计划分为三个主要阶段：
+
+\begin{enumerate}
+  \item \textbf{未名湖守护：}鸭子发现游客污染湖水，学会清理垃圾、提醒游客，并打开湖底水道。当前 Demo 对应这一阶段。
+  \item \textbf{朗润湖误会：}鸭子进入朗润湖，遇到锦鲤、猫、鸽子、松鼠、乌龟等动物。动物们误以为科研设备和保护围挡是新的破坏，于是尝试阻止人类行为。
+  \item \textbf{协助科研：}玩家逐步发现北大学生和老师正在进行生态监测与修复。动物们转而协助科研，解决水质异常、鱼群生病、水道堵塞和局部缺氧等危机。
+\end{enumerate}
+
+\subsection{多动物能力设计}
+
+\begin{longtable}{p{2.6cm}p{4cm}p{7.4cm}}
+\toprule
+动物 & 能力定位 & 代表任务 \\
+\midrule
+\endhead
+鸭子 & 水陆两栖、引导人类注意 & 湖面巡逻、叼垃圾、鸣叫提醒游客、引导科研人员发现异常。 \\
+锦鲤 & 水下探索 & 进入水下管道，寻找污染源、缺氧区和堵塞物。 \\
+猫 & 夜间潜行 & 夜间进入人类活动区，传递线索或观察科研设备。 \\
+鸽子 & 高空侦查 & 从空中发现异常水域、围挡破损和游客集中区域。 \\
+松鼠 & 树上路线与修复 & 通过树冠和岸边设施移动，修复生态通道或启动轻量机关。 \\
+乌龟 & 稳定、防御、慢速机关 & 承重压板、保护幼鱼区域、协助通过危险水域。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{叙事主题}
+
+游戏主题不是简单地将``人类''设为反派，而是区分无意识的游客破坏与有目标的生态科研。玩家最初以动物直觉保护家园，后期则理解并协助科研行动。这个主题适合北大校园语境：学校不仅是生活空间，也是知识生产与环境治理实践发生的地方。
+
+\section{关卡与流程设计}
+
+\subsection{当前 Demo 流程}
+
+当前 Demo 的可演示流程为：
+
+\begin{enumerate}
+  \item 玩家进入未名湖第一人称鸭子视角。
+  \item HUD 显示清澈度、游客意识、体力、阶段进度、小地图和任务提示。
+  \item 玩家清理湖中已有垃圾，熟悉拾取和回收。
+  \item 第一阶段完成后选择升级，进入游客投放更快的第二阶段。
+  \item 第二阶段获得小告示牌，可以靠近游客鸣叫警告，暂停其乱丢行为并获得额外进度。
+  \item 第二阶段完成后再次选择升级，进入王乱丢 Boss 战。
+  \item 第三阶段通过捡垃圾、投掷、躲避攻击和使用湖心岛道具击败 Boss。
+  \item 王乱丢撤离后，湖底通道打开，Demo 结算并提示后续朗润湖阶段尚未完成。
+\end{enumerate}
+
+\section{美术与视听风格}
+
+\subsection{视觉风格}
+
+当前 Demo 使用低多边形 3D 风格。选择这一风格有三个原因：
+
+\begin{itemize}
+  \item 与课程原型开发周期匹配，能在有限时间内快速形成可运行场景。
+  \item 低多边形风格对浏览器性能友好，适合网页端直接演示。
+  \item 通过轮廓、色块和空间位置强调校园意象，而不是追求写实建模。
+\end{itemize}
+
+场景中已经包含未名湖、湖心岛、桥、石舫、环湖岸坡、游客、回收点和博雅塔。博雅塔在当前版本中按照八角基座、十三层密檐塔的特征进行了重做，使其更接近真实博雅塔的校园识别度。
+
+\subsection{声音设计}
+
+当前 Demo 使用本地真实鸭叫素材，并加入水中划水、陆地脚步、桥面脚步、岛上脚步、背景风声和鸟鸣等音频。浏览器合成音效用于补充拾取、回收、游客投掷、受击和胜负反馈。声音目标是让玩家迅速感知动作是否成功，并强化``鸭子守护湖泊''的角色感。
+
+\section{技术方案}
+
+\subsection{当前实现}
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{p{3cm}Y}
+\toprule
+模块 & 技术实现 \\
+\midrule
+渲染 & Three.js ES Module，WebGL 3D 场景。 \\
+平台 & 静态网页：HTML、CSS、JavaScript。 \\
+输入 & 键盘 WASD、Q/E、Shift、Space、1/2/3、Esc 与鼠标视角、鼠标左键投掷控制。 \\
+状态管理 & 单文件 JavaScript 状态对象，管理阶段、清澈度、游客、垃圾、升级、Boss 血量、鸭子血量、道具槽、胜负和过场弹窗。 \\
+UI & HTML/CSS HUD、暂停菜单、阶段说明、升级弹窗、小地图、Boss 指示器、血条、道具槽和伤害红边提示。 \\
+音频 & 本地 M4A/MP3/WAV/OGG 音频素材与 Web Audio 合成音效。 \\
+部署 & 已部署到 GitHub Pages，链接为 \url{https://zzatpku.github.io/Game/}。 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{运行方式}
+
+当前 Demo 已经部署到 GitHub Pages，访问者可以直接打开以下链接试玩：
+
+\begin{center}
+\url{https://zzatpku.github.io/Game/}
+\end{center}
+
+如果现场路演希望直接展示第三阶段 Boss 战，也可以使用调试链接：
+
+\begin{center}
+\url{https://zzatpku.github.io/Game/?debugStage=3}
+\end{center}
+
+浏览器会自动加载 \texttt{index.html}、\texttt{styles.css}、\texttt{game.js}、音频资源和 Three.js 库。
+
+\section{当前 Demo 完成度}
+
+\subsection{已实现内容}
+
+\begin{itemize}
+  \item 第一人称鸭子视角与低视角移动。
+  \item 未名湖 3D 场景，包括湖心岛、桥、石舫、岸坡、博雅塔、游客、回收点等。
+  \item 垃圾生成、拾取、携带、回收。
+  \item 游客投放垃圾、告示牌提醒游客、游客冷静时间和游客意识反馈。
+  \item 清澈度、游客意识、体力、阶段进度、小地图、Boss 血条、鸭子血条、道具槽等 HUD。
+  \item 第一阶段 5 件垃圾、第二阶段 15 点进度、第三阶段 Boss 战的三阶段流程。
+  \item 阶段之间的升级选择：携带上限、体力上限与鸣叫范围。
+  \item 红色污染热点、连续回收连击、命中 Boss 回复清澈度等反馈。
+  \item 王乱丢 Boss、跟随游客、投掷弹道、Boss 出场和撤离过场。
+  \item 湖心岛道具系统：净水叶、扩容带、定身石、莲子糖，最多存 3 个道具。
+  \item 暂停菜单、阶段说明、失败说明、胜利结算和当前进度显示。
+  \item 鸭叫、划水、脚步、背景环境音和动作反馈音效。
+\end{itemize}
+
+\subsection{尚未实现内容}
+
+\begin{itemize}
+  \item 朗润湖地图与水下通道的可游玩区域。
+  \item 多动物切换系统。
+  \item 科研误会与反转的任务链。
+  \item 水下探索、生态机关和多动物协作解谜。
+  \item 更完整的剧情演出、任务文本和角色对话。
+\end{itemize}
+
+\section{开发过程与迭代记录}
+
+\begin{longtable}{p{3cm}p{10.8cm}}
+\toprule
+迭代方向 & 具体调整 \\
+\midrule
+\endhead
+核心循环成型 & 从单纯设定文案推进到可运行 Demo，实现游客投放、鸭子拾取、回收点投放和清澈度反馈。 \\
+空间修正 & 调整湖心岛、桥、石舫、岸坡、南侧道路等场景位置和高度，减少穿模并增强空间可信度。 \\
+操作修正 & 从早期方向键/拖拽转向改为更常见的 WASD + 鼠标视角控制，增强现场试玩直觉。 \\
+阶段系统 & 将一次性目标改为三阶段流程：清理入门、告示牌提醒、王乱丢 Boss 战，并在阶段之间提供升级。 \\
+战斗系统 & 新增 Boss 血量、鸭子血量、垃圾投掷、跟随游客、污染归零后的持续掉血和湖心岛道具。 \\
+胜利反馈 & 将 Boss 击败与``湖底水道打开''绑定，使 Demo 结尾能自然连接完整游戏第二阶段。 \\
+校园识别度 & 重做博雅塔，使其具有八角基座和十三层密檐塔特征。 \\
+\bottomrule
+\end{longtable}
+
+\section{试玩测试与已知问题}
+
+\subsection{已有验证}
+
+当前版本经过了开发侧的基础验证：
+
+\begin{itemize}
+  \item GitHub Pages 试玩链接可以正常加载。
+  \item 游戏状态可从第一阶段推进到升级选择、第二阶段、第三阶段 Boss 战，并最终进入胜利结算。
+  \item 调试链接可以直接进入第三阶段，便于现场展示 Boss 与道具机制。
+  \item 暂停菜单能够显示进度，小地图保持在右上角。
+  \item 岸边游客、桥柱碰撞、回收点位置、湖心岛道具点和岸坡高度经过多轮修正。
+\end{itemize}
+
+\subsection{已知问题}
+
+\begin{itemize}
+  \item 当前 Demo 已有清理、警告和 Boss 战，但任务文本与剧情演出仍偏原型化。
+  \item 完整版本中的多动物系统和朗润湖探索尚未实现。
+  \item 低多边形场景仍为概念表达，建筑和地形不是精确复刻。
+\end{itemize}
+
+\section{后续计划}
+
+\begin{enumerate}
+  \item 增加朗润湖入口关卡，让当前胜利后的水道不只作为文字反馈。
+  \item 实现第二个可操控动物，优先选择锦鲤，以验证水下探索机制。
+  \item 增加任务文本和科研 NPC 线索，强化``误会科研到协助科研''的叙事转折。
+  \item 继续优化未名湖地形、建筑比例、碰撞和操作手感。
+\end{enumerate}
+
+\section{结语}
+
+《未名湖守护鸭》的当前 Demo 已经形成可运行的三阶段闭环，能够展示清理、告示牌提醒、升级、Boss 战、道具和胜利结果。完整游戏构想则以此为起点，把北大校园生态空间、动物视角和科研主题结合起来，形成从未名湖到朗润湖的开放生态冒险。
+
+\end{document}

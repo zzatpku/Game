@@ -1,3 +1,5 @@
-docs
+docs/*
+!docs/第15组路演材料.tex
 requirements.txt
 *.mp4
+!assets/拿技能+使用技能.mp4
